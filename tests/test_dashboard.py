@@ -1089,6 +1089,8 @@ class FrontendDeploymentTests(unittest.TestCase):
         self.assertEqual(manifest["icons"][0]["src"], "assets/icon.svg")
         self.assertIn("self.registration.scope", service_worker)
         self.assertNotIn('startsWith("/api/")', service_worker)
+        self.assertIn('window.location.protocol === "file:"', index)
+        self.assertIn('https://shushu.host/liquidity/', index)
 
     def test_public_release_is_validated_and_excludes_local_only_files(self) -> None:
         if not (PROJECT_ROOT / "data" / "snapshots" / "latest.json").is_file():

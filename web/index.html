@@ -10,6 +10,11 @@
     <link rel="manifest" href="manifest.webmanifest">
     <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
     <script>
+      if (window.location.protocol === "file:") {
+        window.location.replace(`https://shushu.host/liquidity/${window.location.hash || "#overview"}`);
+      }
+    </script>
+    <script>
       (() => {
         const key = "macro-liquidity-theme";
         let theme = null;
