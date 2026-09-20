@@ -262,8 +262,12 @@ def _asset_rows(payload: dict[str, Any]) -> list[dict[str, Any]]:
 
 def _sum_field(assets: list[dict[str, Any]], field: str) -> float | None:
     values = [_nested_usd(item, field) for item in assets]
-    present = [value for value in values if value is not None]
-    return sum(present) if present else None
+    # A missing historical value is unknown, not zero. Summing only the rows
+    # that happen to expose a prior-period field would silently change the
+    # asset universe and manufacture a false supply change.
+    if not values or any(value is None for value in values):
+        return None
+    return sum(float(value) for value in values)
 
 
 def _asset_metric(
@@ -341,7 +345,10 @@ def _other_metric(
         fetched_at,
         source,
         changes=changes,
-        metadata={"asset_count": max(0, len(assets) - 2)},
+        metadata={
+            "asset_count": max(0, len(assets) - 2),
+            "aggregation_policy": "all_assets_required_for_each_comparison_window",
+        },
     )
 
 

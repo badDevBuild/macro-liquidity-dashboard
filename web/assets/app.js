@@ -59,7 +59,10 @@ const GROUP_LABELS = {
 const STATUS_LABELS = {
   publish: "数据正常",
   publish_degraded: "部分数据缺失",
-  block_analysis: "暂不新增分析"
+  block_analysis: "暂不新增分析",
+  ready: "数据正常",
+  degraded: "部分数据不可用",
+  stale: "数据已过期"
 };
 const SOAK_STATUS_LABELS = {
   passed: "稳定性已通过",
@@ -142,6 +145,7 @@ const state = {
   renderedViews: new Set(),
   ledgerFilter: "all",
   seriesCache: new Map(),
+  seriesRequests: new WeakMap(),
   scrollPositions: loadScrollPositions(),
   stablecoinChart: { mode: "supply", range: "1y" },
   crossAsset: { comparison: "btc_spx", range: "1y" },
@@ -435,7 +439,18 @@ function formatCadence(value) {
 }
 
 function statusClass(code) {
-  return `status-${String(code || "block_analysis").replaceAll(/[^a-z_]/g, "")}`;
+  const displayCode = code === "ready"
+    ? "publish"
+    : code === "degraded"
+      ? "publish_degraded"
+      : code === "stale"
+        ? "block_analysis"
+        : code;
+  return `status-${String(displayCode || "block_analysis").replaceAll(/[^a-z_]/g, "")}`;
+}
+
+function effectiveDataStatus(status) {
+  return status?.data_status?.code || status?.code || "block_analysis";
 }
 
 function soakStatusClass(code) {
@@ -732,6 +747,11 @@ function renderAgentAnalysis(data) {
 }
 
 function statusNotice(data) {
+  const runtimeCode = effectiveDataStatus(data.status);
+  if (runtimeCode === "stale") {
+    const stale = (data.status.runtime_stale || []).map((item) => item.label).join("、");
+    return `<div class="notice notice-error"><strong>当前数据已经过期</strong><span>${escapeHTML(stale || "关键指标")} 超过了允许的更新时间。网页仍可浏览，但不会把旧数据当成今天的新信号，也不会生成新的 Agent 判断。</span></div>`;
+  }
   const code = data.status.code;
   if (code === "publish") return "";
   const missing = data.status.unavailable.map((item) => item.label).join("、");
@@ -834,6 +854,7 @@ function renderEventCalendar(data) {
 function renderOverview(data) {
   const proxy = data.proxy;
   const status = data.status;
+  const currentStatusCode = effectiveDataStatus(status);
   const trendChanges = proxy.trend_changes || {};
   const weeklyChange = numericOrNull(trendChanges["1w"]?.change);
   const latestReleaseChange = numericOrNull(proxy.latest_release_change);
@@ -984,7 +1005,7 @@ function renderOverview(data) {
     <div class="morning-grid">
       <details class="trust-panel" aria-labelledby="trust-title">
         <summary id="trust-title">
-          <span class="status-pill ${statusClass(status.code)}">${escapeHTML(STATUS_LABELS[status.code] || "状态未知")}</span>
+          <span class="status-pill ${statusClass(currentStatusCode)}">${escapeHTML(STATUS_LABELS[currentStatusCode] || "状态未知")}</span>
           <span class="trust-summary-meta">${status.eligible_metric_count}/${status.total_metric_count} 项可用 · ${escapeHTML(formatDateTime(latestRun))} 更新</span>
           <span class="disclosure-caret" aria-hidden="true">›</span>
         </summary>
@@ -2601,6 +2622,10 @@ function sourceDisclosure(source) {
 
 function renderData(data) {
   const status = data.status;
+  const currentStatusCode = effectiveDataStatus(status);
+  const serviceCode = status.service_status?.code || "unknown";
+  const updateCode = status.update_status?.code || "unknown";
+  const updateLabel = updateCode === "completed" ? "最近一次更新完成" : updateCode === "running" ? "正在更新" : updateCode === "unknown" ? "更新状态未知" : `更新状态：${updateCode}`;
   const soak = status.soak || {};
   const agentSoak = status.agent_soak || {};
   const observed = Number(soak.observed_distinct_days || 0);
@@ -2622,7 +2647,7 @@ function renderData(data) {
     <section class="dashboard-section" aria-labelledby="gate-title">
       <div class="section-heading"><div><h2 id="gate-title">本次更新和长期稳定性</h2><p>一次更新成功，不代表数据通道已经完成连续观察。</p></div></div>
       <div class="status-split-grid">
-        <div><span>本次数据</span><strong>${status.eligible_metric_count}/${status.total_metric_count} 条通过检查</strong><span class="status-pill ${statusClass(status.code)}">${escapeHTML(STATUS_LABELS[status.code] || "状态未知")}</span></div>
+        <div><span>当前数据</span><strong>${status.data_status?.runtime_eligible_metric_count ?? status.eligible_metric_count}/${status.total_metric_count} 条现在可用</strong><span class="status-pill ${statusClass(currentStatusCode)}">${escapeHTML(STATUS_LABELS[currentStatusCode] || "状态未知")}</span></div>
         <div><span>稳定性观察</span><strong>${observed}/${required} 个数据日</strong><span class="status-pill ${soakStatusClass(soakCode)}">${escapeHTML(soakLabel)}</span></div>
       </div>
       <div class="soak-progress">
@@ -2631,6 +2656,9 @@ function renderData(data) {
       </div>
       <div class="notice"><strong>观察仍在继续</strong><span>已记录的 ${observed} 个数据日中，可正常发布的比例是 ${roundForDisplay(Number(soak.publishable_rate || 0) * 100, 0)}%。Agent 另有 ${agentObserved}/${agentRequired} 个观察日。</span></div>
       <dl class="method-grid">
+        <dt>网页服务</dt><dd>${serviceCode === "ok" ? "正常" : "异常"}</dd>
+        <dt>自动更新</dt><dd>${escapeHTML(updateLabel)}</dd>
+        <dt>当前数据</dt><dd>${escapeHTML(STATUS_LABELS[currentStatusCode] || "状态未知")}</dd>
         <dt>这次更新编号</dt><dd>${escapeHTML(data.snapshot.run_id || "无")}</dd>
         <dt>完成时间</dt><dd>${escapeHTML(formatDateTime(data.snapshot.completed_at))}（北京时间）</dd>
         <dt>拿到的数据</dt><dd>${status.eligible_metric_count}/${status.total_metric_count} 条通过检查</dd>
@@ -2722,10 +2750,70 @@ function applyLedgerFilter() {
 
 function downsample(points, maximum = 320) {
   if (points.length <= maximum) return points;
-  const step = Math.ceil(points.length / maximum);
-  const sampled = points.filter((_, index) => index % step === 0);
-  if (sampled.at(-1) !== points.at(-1)) sampled.push(points.at(-1));
-  return sampled;
+  const interior = points.slice(1, -1);
+  const bucketCount = Math.max(1, Math.floor((maximum - 2) / 2));
+  const sampled = [points[0]];
+  for (let bucket = 0; bucket < bucketCount; bucket += 1) {
+    const start = Math.floor(bucket * interior.length / bucketCount);
+    const end = Math.floor((bucket + 1) * interior.length / bucketCount);
+    const slice = interior.slice(start, Math.max(start + 1, end));
+    if (!slice.length) continue;
+    let minimumIndex = 0;
+    let maximumIndex = 0;
+    slice.forEach((point, index) => {
+      if (Number(point.value) < Number(slice[minimumIndex].value)) minimumIndex = index;
+      if (Number(point.value) > Number(slice[maximumIndex].value)) maximumIndex = index;
+    });
+    [...new Set([minimumIndex, maximumIndex])]
+      .sort((left, right) => left - right)
+      .forEach((index) => sampled.push(slice[index]));
+  }
+  sampled.push(points.at(-1));
+  return sampled.slice(0, maximum);
+}
+
+function chartGapThresholdDays(metric) {
+  const cadence = String(metric?.cadence || "");
+  if (cadence.includes("quarter")) return 120;
+  if (cadence.includes("month")) return 45;
+  if (cadence.includes("week")) return 15;
+  if (cadence.includes("continuous")) return 3;
+  return 5;
+}
+
+function chartSegments(rawPoints, metric) {
+  const valid = (rawPoints || []).filter((point) => point?.observed_at && numericOrNull(point.value) !== null);
+  const thresholdMs = chartGapThresholdDays(metric) * 86_400_000;
+  const segments = [];
+  let current = [];
+  valid.forEach((point) => {
+    const time = Date.parse(`${point.observed_at.slice(0, 10)}T00:00:00Z`);
+    const previous = current.at(-1);
+    const previousTime = previous ? Date.parse(`${previous.observed_at.slice(0, 10)}T00:00:00Z`) : null;
+    if (previousTime !== null && time - previousTime > thresholdMs) {
+      if (current.length) segments.push(current);
+      current = [];
+    }
+    current.push(point);
+  });
+  if (current.length) segments.push(current);
+  return segments;
+}
+
+function chartDataTable(points, metric, rangeId) {
+  const rows = points.slice(-30).reverse().map((point) => `
+    <tr>
+      <td>${escapeHTML(formatChartDate(point.observed_at, rangeId))}</td>
+      <td>${escapeHTML(chartAxisValue(point.value, metric))}</td>
+    </tr>`).join("");
+  return `
+    <details class="chart-data-table">
+      <summary>查看数据明细（${points.length} 条）</summary>
+      <div class="chart-data-scroll">
+        <table><thead><tr><th>日期</th><th>数值</th></tr></thead><tbody>${rows}</tbody></table>
+      </div>
+      ${points.length > 30 ? `<p>表格显示最近 30 条；接口保留本时间范围的全部 ${points.length} 条数据。</p>` : ""}
+    </details>`;
 }
 
 function chartAxisValue(value, metric, compact = false) {
@@ -2849,12 +2937,18 @@ function drawSignedBarChart(container, rawPoints, metric, rangeId) {
       <text class="chart-label" x="${left + plotWidth + 8}" y="${top + plotHeight + 4}">${escapeHTML(chartAxisValue(minimum, metric, isNarrow))}</text>
       <text class="chart-label" x="${left}" y="${height - 8}">${escapeHTML(formatChartDate(points[0].observed_at, rangeId))}</text>
       <text class="chart-label" text-anchor="end" x="${left + plotWidth}" y="${height - 8}">${escapeHTML(formatChartDate(points.at(-1).observed_at, rangeId))}</text>
-    </svg>`;
+    </svg>
+    ${chartDataTable(points, metric, rangeId)}`;
 }
 
 function drawChart(container, rawPoints, metric, rangeId) {
   if (!container) return;
-  const points = downsample((rawPoints || []).filter((point) => numericOrNull(point.value) !== null));
+  const segments = chartSegments(rawPoints, metric);
+  const tablePoints = segments.flat();
+  const points = segments.flatMap((segment) =>
+    downsample(segment, Math.max(8, Math.floor(320 / Math.max(1, segments.length))))
+      .map((point, index) => ({...point, _segmentStart: index === 0}))
+  );
   if (points.length < 2) {
     container.innerHTML = `<div class="chart-state">${points.length ? "这个时间段只有一个数据点，还画不出走势。" : "这个时间段还没有历史数据，看板不会凭空补线。"}</div>`;
     return;
@@ -2903,7 +2997,7 @@ function drawChart(container, rawPoints, metric, rangeId) {
     const y = top + (maximum - Number(point.value)) / (maximum - minimum) * plotHeight;
     return [x, y];
   });
-  const path = coordinates.map(([x, y], index) => `${index === 0 ? "M" : "L"}${x.toFixed(2)} ${y.toFixed(2)}`).join(" ");
+  const path = coordinates.map(([x, y], index) => `${points[index]._segmentStart ? "M" : "L"}${x.toFixed(2)} ${y.toFixed(2)}`).join(" ");
   const last = coordinates.at(-1);
   const zeroY = metric?.chart_include_zero
     ? top + (maximum - 0) / (maximum - minimum) * plotHeight
@@ -2912,7 +3006,8 @@ function drawChart(container, rawPoints, metric, rangeId) {
     ? null
     : top + (maximum - chartReference) / (maximum - minimum) * plotHeight;
   const metricLabel = metric?.label || "该指标";
-  const accessible = `${metricLabel} ${RANGE_LABELS[rangeId] || rangeId}趋势，从 ${formatChartDate(points[0].observed_at, rangeId)} 到 ${formatChartDate(points.at(-1).observed_at, rangeId)}`;
+  const gapNote = segments.length > 1 ? `；有 ${segments.length - 1} 处数据缺口，折线已断开` : "";
+  const accessible = `${metricLabel} ${RANGE_LABELS[rangeId] || rangeId}趋势，从 ${formatChartDate(points[0].observed_at, rangeId)} 到 ${formatChartDate(points.at(-1).observed_at, rangeId)}${gapNote}`;
   container.innerHTML = `
     <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHTML(accessible)}">
       <line class="chart-grid" x1="${left}" y1="${top}" x2="${left + plotWidth}" y2="${top}"></line>
@@ -2926,27 +3021,39 @@ function drawChart(container, rawPoints, metric, rangeId) {
       <text class="chart-label" x="${left + plotWidth + 8}" y="${top + plotHeight + 4}">${escapeHTML(chartAxisValue(minimum, metric, isNarrow))}</text>
       <text class="chart-label" x="${left}" y="${height - 8}">${escapeHTML(formatChartDate(points[0].observed_at, rangeId))}</text>
       <text class="chart-label" text-anchor="end" x="${left + plotWidth}" y="${height - 8}">${escapeHTML(formatChartDate(points.at(-1).observed_at, rangeId))}</text>
-    </svg>`;
+    </svg>
+    ${chartDataTable(tablePoints, metric, rangeId)}`;
 }
 
-async function fetchSeriesPayload(metricId, rangeId) {
-  const cacheId = `${metricId}:${rangeId}`;
+async function fetchSeriesPayload(metricId, rangeId, signal) {
+  const releaseId = state.data?.release_id || state.data?.snapshot?.run_id || "unknown";
+  const cacheId = `${releaseId}:${metricId}:${rangeId}`;
   let payload = state.seriesCache.get(cacheId);
   if (payload) return payload;
-  const response = await fetch(appUrl(`api/series?metric_id=${encodeURIComponent(metricId)}&range=${encodeURIComponent(rangeId)}`), { cache: "no-store" });
+  const response = await fetch(appUrl(`api/series?metric_id=${encodeURIComponent(metricId)}&range=${encodeURIComponent(rangeId)}&release_id=${encodeURIComponent(releaseId)}`), { cache: "no-store", signal });
   if (!response.ok) throw new Error(`历史数据请求失败，状态码 ${response.status}`);
   payload = await response.json();
+  if (payload.release_id !== releaseId) throw new Error("历史数据版本和当前页面不一致，请刷新后重试");
   state.seriesCache.set(cacheId, payload);
   return payload;
 }
 
 async function loadSeries(metricId, rangeId, container) {
+  if (!container) return;
+  const previous = state.seriesRequests.get(container);
+  if (previous) previous.controller.abort();
+  const request = {metricId, rangeId, controller: new AbortController()};
+  state.seriesRequests.set(container, request);
   container.innerHTML = `<div class="chart-state">正在读取 ${escapeHTML(RANGE_LABELS[rangeId] || rangeId)}历史…</div>`;
   try {
-    const payload = await fetchSeriesPayload(metricId, rangeId);
+    const payload = await fetchSeriesPayload(metricId, rangeId, request.controller.signal);
+    if (state.seriesRequests.get(container) !== request) return;
     drawChart(container, payload.points, displayMetricById(metricId), rangeId);
   } catch (error) {
+    if (error?.name === "AbortError" || state.seriesRequests.get(container) !== request) return;
     container.innerHTML = `<div class="chart-state">历史读取失败。${escapeHTML(error.message || "请稍后刷新")}</div>`;
+  } finally {
+    if (state.seriesRequests.get(container) === request) state.seriesRequests.delete(container);
   }
 }
 
@@ -2966,8 +3073,9 @@ function renderAll(data) {
   const view = currentHashView();
   document.querySelectorAll(".view").forEach((section) => section.replaceChildren());
   renderView(view, data);
-  const statusLabel = STATUS_LABELS[data.status.code] || "状态未知";
-  elements.compactStatus.className = `compact-status ${statusClass(data.status.code)}`;
+  const currentStatusCode = effectiveDataStatus(data.status);
+  const statusLabel = STATUS_LABELS[currentStatusCode] || "状态未知";
+  elements.compactStatus.className = `compact-status ${statusClass(currentStatusCode)}`;
   elements.compactStatus.textContent = statusLabel;
   elements.brandDate.textContent = `${formatDateTime(data.snapshot.completed_at)} 更新`;
   setView(view, false);

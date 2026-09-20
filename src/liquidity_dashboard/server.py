@@ -95,7 +95,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._error(HTTPStatus.NOT_FOUND, "resource not found")
             return
         if not requested.is_file():
-            requested = web_root / "index.html"
+            self._error(HTTPStatus.NOT_FOUND, "resource not found")
+            return
         try:
             body = requested.read_bytes()
         except OSError:

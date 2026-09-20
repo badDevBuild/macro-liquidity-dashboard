@@ -14,6 +14,7 @@ from .energy_channel import load_energy_history, load_energy_payload
 from .crypto_derivatives_channel import load_crypto_derivatives_payload
 from .crypto_etf_channel import load_crypto_etf_payload
 from .market_expectations import load_market_expectations
+from .public_status import public_cycle_status
 from .stablecoin_channel import load_stablecoin_payload
 from .yen_carry_channel import load_yen_carry_history, load_yen_carry_payload
 from .coinbase_premium import DEFINITIONS as PREMIUM_METRICS, load_payload as load_premium, build_history as premium_history
@@ -516,6 +517,91 @@ def _iso_now(now: datetime | None = None) -> str:
     return current.astimezone(UTC).isoformat().replace("+00:00", "Z")
 
 
+def _runtime_freshness(
+    metric: dict[str, Any],
+    source: dict[str, Any] | None,
+    *,
+    now: datetime | None,
+) -> dict[str, Any]:
+    """Re-evaluate freshness at read time without erasing publication facts."""
+    result = dict(metric)
+    result["publication_quality_status"] = metric.get("quality_status")
+    result["publication_available_for_analysis"] = (
+        metric.get("available_for_analysis") is True
+    )
+    observed_at = metric.get("observed_at")
+    max_days = (source or {}).get("freshness_max_days")
+    if not observed_at or not isinstance(max_days, (int, float)):
+        result["runtime_freshness_status"] = "not_recalculated"
+        return result
+    current = (now or datetime.now(tz=UTC)).astimezone(UTC).date()
+    try:
+        observed = _parse_date(str(observed_at))
+    except ValueError:
+        result["runtime_freshness_status"] = "invalid_observation_date"
+        result["available_for_analysis"] = False
+        result["quality_status"] = "unavailable"
+        return result
+    age_days = max(0, (current - observed).days)
+    result["age_days"] = age_days
+    result["runtime_freshness_max_days"] = int(max_days)
+    if age_days > int(max_days):
+        result["runtime_freshness_status"] = "stale"
+        result["quality_status"] = "stale_runtime"
+        result["available_for_analysis"] = False
+    else:
+        result["runtime_freshness_status"] = "current"
+    return result
+
+
+def _cadence_freshness_days(cadence: Any) -> int | None:
+    value = str(cadence or "").lower()
+    if not value:
+        return None
+    if "continuous" in value:
+        return 1
+    if "us_trading" in value or "business_daily" in value:
+        return 5
+    if "calendar_daily" in value or value == "daily":
+        return 2
+    if "weekly" in value or "week" in value:
+        return 10
+    if "month" in value:
+        return 45
+    if "quarter" in value:
+        return 120
+    return None
+
+
+def _runtime_refresh_optional_view(
+    view: dict[str, Any], *, now: datetime | None
+) -> dict[str, Any]:
+    refreshed = dict(view)
+    metrics: dict[str, dict[str, Any]] = {}
+    for metric_id, metric in view.get("metrics", {}).items():
+        if not isinstance(metric, dict):
+            continue
+        max_days = _cadence_freshness_days(metric.get("cadence"))
+        metrics[metric_id] = (
+            _runtime_freshness(
+                metric,
+                {"freshness_max_days": max_days},
+                now=now,
+            )
+            if max_days is not None
+            else dict(metric)
+        )
+    refreshed["metrics"] = metrics
+    if metrics:
+        refreshed["available_for_analysis"] = any(
+            metric.get("available_for_analysis") is True
+            for metric in metrics.values()
+        )
+        if not refreshed["available_for_analysis"]:
+            refreshed["quality_status"] = "stale_runtime"
+    return refreshed
+
+
 def _source_registry(root: Path) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]]]:
     payload = _load_json(root / "config" / "sources.json", {"sources": []})
     sources = [item for item in payload.get("sources", []) if isinstance(item, dict)]
@@ -528,12 +614,73 @@ def _history_rows(
     source_id: str,
     *,
     since: str | None = None,
+    until: str | None = None,
+    published_at: str | None = None,
 ) -> list[dict[str, Any]]:
+    has_versions = connection.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'observation_versions'"
+    ).fetchone()
+    if published_at and has_versions:
+        date_filters = ""
+        date_parameters: list[Any] = []
+        if since:
+            date_filters += " AND observed_at >= ?"
+            date_parameters.append(since)
+        if until:
+            date_filters += " AND observed_at <= ?"
+            date_parameters.append(until)
+        rows = connection.execute(
+            f"""
+            WITH ranked AS (
+                SELECT observed_at, value, unit,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY observed_at ORDER BY recorded_at DESC
+                       ) AS row_number
+                FROM observation_versions
+                WHERE metric_id = ? AND source_id = ? AND recorded_at <= ?
+            ), selected AS (
+                SELECT observed_at, value, unit, 0 AS revision_count
+                FROM ranked
+                WHERE row_number = 1 {date_filters}
+            ), legacy AS (
+                SELECT o.observed_at, o.value, o.unit, o.revision_count
+                FROM observations o
+                WHERE o.metric_id = ? AND o.source_id = ?
+                  AND o.first_seen_at <= ? {date_filters.replace('observed_at', 'o.observed_at')}
+                  AND NOT EXISTS (
+                      SELECT 1 FROM observation_versions v
+                      WHERE v.metric_id = o.metric_id
+                        AND v.source_id = o.source_id
+                        AND v.observed_at = o.observed_at
+                        AND v.recorded_at <= ?
+                  )
+            )
+            SELECT * FROM selected
+            UNION ALL
+            SELECT * FROM legacy
+            ORDER BY observed_at ASC
+            """,
+            [
+                metric_id,
+                source_id,
+                published_at,
+                *date_parameters,
+                metric_id,
+                source_id,
+                published_at,
+                *date_parameters,
+                published_at,
+            ],
+        ).fetchall()
+        return [dict(row) for row in rows]
     parameters: list[Any] = [metric_id, source_id]
     where = "metric_id = ? AND source_id = ?"
     if since:
         where += " AND observed_at >= ?"
         parameters.append(since)
+    if until:
+        where += " AND observed_at <= ?"
+        parameters.append(until)
     rows = connection.execute(
         f"""
         SELECT observed_at, value, unit, revision_count
@@ -615,11 +762,42 @@ def _change_view(
     }
 
 
+def _change_from_rows(
+    rows: list[dict[str, Any]],
+    latest_observed_at: str,
+    latest_value: float | None,
+    days: int,
+) -> dict[str, Any]:
+    target = (_parse_date(latest_observed_at) - timedelta(days=days)).isoformat()
+    prior = next(
+        (row for row in reversed(rows) if str(row.get("observed_at")) <= target),
+        None,
+    )
+    change = latest_value - prior["value"] if latest_value is not None and prior else None
+    percent_change = (
+        change / abs(prior["value"]) * 100
+        if change is not None and prior and prior["value"] != 0
+        else None
+    )
+    return {
+        "days": days,
+        "change": _round(change),
+        "percent_change": _round(percent_change, 3),
+        "prior_value": _round(prior["value"]) if prior else None,
+        "prior_observed_at": prior["observed_at"] if prior else None,
+    }
+
+
 def _metric_view(
     metric_id: str,
     metric: dict[str, Any],
     connection: sqlite3.Connection,
+    *,
+    source: dict[str, Any] | None = None,
+    now: datetime | None = None,
+    published_at: str | None = None,
 ) -> dict[str, Any]:
+    metric = _runtime_freshness(metric, source, now=now)
     definition = METRICS.get(metric_id, {})
     value = metric.get("value") if isinstance(metric.get("value"), (int, float)) else None
     sparkline: list[dict[str, Any]] = []
@@ -628,22 +806,32 @@ def _metric_view(
     observed_at = metric.get("observed_at")
     previous_observation: dict[str, Any] | None = None
     if source_id and observed_at:
-        previous_observation = _previous_observation_row(
-            connection, metric_id, source_id, observed_at
+        since = (_parse_date(observed_at) - timedelta(days=370)).isoformat()
+        sparkline = _history_rows(
+            connection,
+            metric_id,
+            source_id,
+            since=since,
+            until=str(observed_at),
+            published_at=published_at,
+        )
+        previous_observation = next(
+            (
+                row
+                for row in reversed(sparkline)
+                if str(row.get("observed_at")) < str(observed_at)
+            ),
+            None,
         )
         changes = {
-            window: _change_view(
-                connection,
-                metric_id,
-                source_id,
+            window: _change_from_rows(
+                sparkline,
                 observed_at,
                 value,
                 days,
             )
             for window, days in CHANGE_WINDOWS.items()
         }
-        since = (_parse_date(observed_at) - timedelta(days=366)).isoformat()
-        sparkline = _history_rows(connection, metric_id, source_id, since=since)
     weekly = changes.get("1w", {})
     latest_change = (
         value - previous_observation["value"]
@@ -694,6 +882,7 @@ def _proxy_history(
     metric_views: dict[str, dict[str, Any]],
     *,
     since: str | None = None,
+    published_at: str | None = None,
 ) -> list[dict[str, Any]]:
     """Daily closing-balance series, never WTREGEN's weekly average.
 
@@ -713,13 +902,25 @@ def _proxy_history(
     if since:
         history_since = (_parse_date(since) - timedelta(days=14)).isoformat()
     fed_rows = _history_rows(
-        connection, "fed_total_assets", source_ids["fed"], since=history_since
+        connection,
+        "fed_total_assets",
+        source_ids["fed"],
+        since=history_since,
+        published_at=published_at,
     )
     tga_rows = _history_rows(
-        connection, "tga_daily", source_ids["tga"], since=history_since
+        connection,
+        "tga_daily",
+        source_ids["tga"],
+        since=history_since,
+        published_at=published_at,
     )
     rrp_rows = _history_rows(
-        connection, "overnight_rrp", source_ids["rrp"], since=history_since
+        connection,
+        "overnight_rrp",
+        source_ids["rrp"],
+        since=history_since,
+        published_at=published_at,
     )
     if not fed_rows or not tga_rows or not rrp_rows:
         return []
@@ -857,11 +1058,20 @@ def _series_for_metric(
     metric_id: str,
     *,
     since: str | None = None,
+    published_at: str | None = None,
 ) -> list[dict[str, Any]]:
     source_id = metric_views.get(metric_id, {}).get("source_id")
-    if not source_id:
+    snapshot_observed_at = metric_views.get(metric_id, {}).get("observed_at")
+    if not source_id or not snapshot_observed_at:
         return []
-    return _history_rows(connection, metric_id, source_id, since=since)
+    return _history_rows(
+        connection,
+        metric_id,
+        source_id,
+        since=since,
+        until=str(snapshot_observed_at),
+        published_at=published_at,
+    )
 
 
 def _derived_spread_view(
@@ -871,6 +1081,7 @@ def _derived_spread_view(
     right_metric_id: str,
     left_rows: list[dict[str, Any]],
     right_rows: list[dict[str, Any]],
+    component_views: dict[str, dict[str, Any]],
     *,
     streak_condition: str,
 ) -> dict[str, Any]:
@@ -885,6 +1096,26 @@ def _derived_spread_view(
         if len(points) >= 2
         else None
     )
+    left_view = component_views.get(left_metric_id, {})
+    right_view = component_views.get(right_metric_id, {})
+    components_available = (
+        left_view.get("available_for_analysis") is True
+        and right_view.get("available_for_analysis") is True
+    )
+    quality_status = (
+        "fresh_network"
+        if components_available
+        and left_view.get("quality_status") == "fresh_network"
+        and right_view.get("quality_status") == "fresh_network"
+        else "fresh_cache"
+        if components_available
+        else "unavailable"
+    )
+    available_for_analysis = bool(
+        components_available
+        and latest.get("value") is not None
+        and latest.get("observed_at")
+    )
     return {
         "metric_id": metric_id,
         "label": label,
@@ -892,6 +1123,25 @@ def _derived_spread_view(
         "right_metric_id": right_metric_id,
         "formula": f"{left_metric_id} − {right_metric_id}",
         "unit": "basis_points",
+        "source_id": "derived_from_selected_snapshot_sources",
+        "source_name": "由正式快照中的两个基础指标计算",
+        "quality_status": quality_status,
+        "available_for_analysis": available_for_analysis,
+        "methodology_version": "aligned_common_date_spread_v2",
+        "component_quality": {
+            left_metric_id: {
+                "source_id": left_view.get("source_id"),
+                "quality_status": left_view.get("quality_status"),
+                "available_for_analysis": left_view.get("available_for_analysis") is True,
+                "snapshot_observed_at": left_view.get("observed_at"),
+            },
+            right_metric_id: {
+                "source_id": right_view.get("source_id"),
+                "quality_status": right_view.get("quality_status"),
+                "available_for_analysis": right_view.get("available_for_analysis") is True,
+                "snapshot_observed_at": right_view.get("observed_at"),
+            },
+        },
         "value": latest.get("value"),
         "observed_at": latest.get("observed_at"),
         "latest_change": latest_change,
@@ -904,6 +1154,8 @@ def _derived_spread_view(
 def _funding_rates_view(
     connection: sqlite3.Connection,
     metric_views: dict[str, dict[str, Any]],
+    *,
+    published_at: str | None = None,
 ) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
     rate_ids = (
         "sofr",
@@ -915,6 +1167,7 @@ def _funding_rates_view(
     rows = {
         metric_id: _series_for_metric(
             connection, metric_views, metric_id, since=since
+            , published_at=published_at
         )
         for metric_id in rate_ids
     }
@@ -947,6 +1200,7 @@ def _funding_rates_view(
             right_id,
             rows[left_id],
             rows[right_id],
+            metric_views,
             streak_condition="positive",
         )
         for metric_id, label, left_id, right_id in definitions
@@ -956,7 +1210,13 @@ def _funding_rates_view(
     primary_value = primary.get("value")
     pipe_value = pipe.get("value")
     positive_days = primary.get("streak", {}).get("observations", 0)
-    if (
+    if not (
+        primary.get("available_for_analysis") is True
+        and pipe.get("available_for_analysis") is True
+    ):
+        state = "unavailable"
+        conclusion = "基础利率数据当前不可用于分析，暂时不判断短端资金压力。"
+    elif (
         isinstance(primary_value, (int, float))
         and primary_value > 0
         and positive_days >= 3
@@ -1040,6 +1300,8 @@ def _curve_snapshot(
 def _treasury_curve_view(
     connection: sqlite3.Connection,
     metric_views: dict[str, dict[str, Any]],
+    *,
+    published_at: str | None = None,
 ) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
     maturity_ids = (
         "treasury_3m_yield",
@@ -1051,6 +1313,7 @@ def _treasury_curve_view(
     rows = {
         metric_id: _series_for_metric(
             connection, metric_views, metric_id, since=since
+            , published_at=published_at
         )
         for metric_id in maturity_ids
     }
@@ -1083,14 +1346,21 @@ def _treasury_curve_view(
             right_id,
             rows[left_id],
             rows[right_id],
+            metric_views,
             streak_condition="negative",
         )
         for metric_id, label, left_id, right_id in spread_definitions
     }
     latest = _curve_snapshot(curve_points)
+    curve_available = all(
+        metric_views.get(metric_id, {}).get("available_for_analysis") is True
+        for metric_id in maturity_ids
+    ) and all(
+        spread.get("available_for_analysis") is True for spread in spreads.values()
+    )
     return (
         {
-            "state": "ready" if latest else "unavailable",
+            "state": "ready" if latest and curve_available else "unavailable",
             "maturities": [
                 {"metric_id": metric_id, "label": METRICS[metric_id]["short_label"]}
                 for metric_id in maturity_ids
@@ -1279,6 +1549,17 @@ def _proxy_view(
         direction = "flat"
         headline = "按这组账本数据看，这周几乎没变"
     trend = history[-366:]
+    components_available = all(
+        metrics.get(key, {}).get("available_for_analysis") is True for key in keys
+    )
+    quality_status = (
+        "fresh_network"
+        if components_available
+        and all(metrics.get(key, {}).get("quality_status") == "fresh_network" for key in keys)
+        else "fresh_cache"
+        if components_available
+        else "unavailable"
+    )
     return {
         "id": "net_liquidity_proxy",
         "label": "流动性参考值",
@@ -1286,6 +1567,8 @@ def _proxy_view(
         "formula": "美联储总资产 - 财政部现金 - RRP",
         "unit": "usd_millions",
         "methodology_version": "daily-tga-v1",
+        "quality_status": quality_status,
+        "available_for_analysis": bool(components_available and current_value is not None),
         "value": _round(current_value),
         "observed_at": latest_point.get("observed_at"),
         "week_prior_value": _round(previous_value),
@@ -1824,27 +2107,48 @@ def build_dashboard(root: Path, *, now: datetime | None = None) -> dict[str, Any
         raise FileNotFoundError("no formal dashboard snapshot is available")
     health = _load_json(root / "data" / "status" / "health-14d.json")
     agent_health = _load_json(root / "data" / "status" / "agent-health-14d.json")
-    shadow = _load_json(root / "data" / "status" / "latest-shadow-cycle.json")
-    source_list, _ = _source_registry(root)
+    shadow_internal = _load_json(root / "data" / "status" / "latest-shadow-cycle.json")
+    shadow = public_cycle_status(shadow_internal)
+    source_list, source_by_id = _source_registry(root)
     with closing(_connect_readonly(root / "data" / "channel.sqlite3")) as connection:
         metric_views = {
-            metric_id: _metric_view(metric_id, metric, connection)
+            metric_id: _metric_view(
+                metric_id,
+                metric,
+                connection,
+                source=source_by_id.get(str(metric.get("source_id") or "")),
+                now=now,
+                published_at=str(snapshot.get("completed_at") or "") or None,
+            )
             for metric_id, metric in snapshot.get("metrics", {}).items()
             if isinstance(metric, dict)
         }
-        proxy_history = _proxy_history(connection, metric_views)
-        funding_rates, funding_spreads = _funding_rates_view(connection, metric_views)
-        treasury_curve, curve_spreads = _treasury_curve_view(connection, metric_views)
-    stablecoin_liquidity = _stablecoin_view(root)
-    stablecoin_metrics = stablecoin_liquidity.get("metrics", {})
-    crypto_etf = _optional_crypto_view(load_crypto_etf_payload(root))
-    crypto_derivatives = _optional_crypto_view(
-        load_crypto_derivatives_payload(root)
+        publication_cutoff = str(snapshot.get("completed_at") or "") or None
+        proxy_history = _proxy_history(
+            connection, metric_views, published_at=publication_cutoff
+        )
+        funding_rates, funding_spreads = _funding_rates_view(
+            connection, metric_views, published_at=publication_cutoff
+        )
+        treasury_curve, curve_spreads = _treasury_curve_view(
+            connection, metric_views, published_at=publication_cutoff
+        )
+    stablecoin_liquidity = _runtime_refresh_optional_view(
+        _stablecoin_view(root), now=now
     )
-    cross_asset = _cross_asset_view(root)
-    yen_carry = _yen_carry_view(root)
-    energy = _energy_view(root)
-    coinbase_premium = load_premium(root, now=now)
+    stablecoin_metrics = stablecoin_liquidity.get("metrics", {})
+    crypto_etf = _runtime_refresh_optional_view(
+        _optional_crypto_view(load_crypto_etf_payload(root)), now=now
+    )
+    crypto_derivatives = _runtime_refresh_optional_view(
+        _optional_crypto_view(load_crypto_derivatives_payload(root)), now=now
+    )
+    cross_asset = _runtime_refresh_optional_view(_cross_asset_view(root), now=now)
+    yen_carry = _runtime_refresh_optional_view(_yen_carry_view(root), now=now)
+    energy = _runtime_refresh_optional_view(_energy_view(root), now=now)
+    coinbase_premium = _runtime_refresh_optional_view(
+        load_premium(root, now=now), now=now
+    )
     crypto_etf_metrics = crypto_etf.get("metrics", {})
     crypto_derivatives_metrics = crypto_derivatives.get("metrics", {})
     cross_asset_metrics = cross_asset.get("metrics", {})
@@ -1894,16 +2198,33 @@ def build_dashboard(root: Path, *, now: datetime | None = None) -> dict[str, Any
         for metric in metric_views.values()
         if metric.get("quality_status") not in {"fresh_network", "fresh_cache"}
     ]
+    runtime_stale = [
+        metric
+        for metric in metric_views.values()
+        if metric.get("runtime_freshness_status") == "stale"
+    ]
+    runtime_analysis_allowed = bool(publication.get("analysis_allowed")) and not runtime_stale
+    runtime_eligible_count = sum(
+        metric.get("available_for_analysis") is True for metric in metric_views.values()
+    )
+    data_status_code = (
+        "stale"
+        if runtime_stale
+        else "ready"
+        if runtime_analysis_allowed
+        else "degraded"
+    )
     proxy = _proxy_view(metric_views, proxy_history)
     agent_analysis = load_agent_analysis(
         root,
         snapshot_run_id=str(snapshot.get("run_id") or ""),
-        analysis_allowed=bool(publication.get("analysis_allowed")),
+        analysis_allowed=runtime_analysis_allowed,
         metrics={**all_metrics, **derived_metrics},
         proxy=proxy,
     )
     return {
         "schema_version": "2.7",
+        "release_id": snapshot.get("run_id"),
         "generated_at": _iso_now(now),
         "snapshot": {
             "run_id": snapshot.get("run_id"),
@@ -1915,12 +2236,24 @@ def build_dashboard(root: Path, *, now: datetime | None = None) -> dict[str, Any
         },
         "status": {
             "code": publication.get("status", "block_analysis"),
-            "analysis_allowed": bool(publication.get("analysis_allowed")),
+            "analysis_allowed": runtime_analysis_allowed,
+            "service_status": {"code": "ok", "message": "网页服务正常"},
+            "update_status": {
+                "code": shadow.get("status") or shadow.get("state") or "unknown",
+                "completed_at": shadow.get("completed_at"),
+            },
+            "data_status": {
+                "code": data_status_code,
+                "runtime_eligible_metric_count": runtime_eligible_count,
+                "runtime_stale_metric_count": len(runtime_stale),
+                "checked_at": _iso_now(now),
+            },
             "coverage_ratio": publication.get("coverage_ratio", 0),
             "eligible_metric_count": publication.get("eligible_metric_count", 0),
             "total_metric_count": publication.get("total_metric_count", len(metric_views)),
             "unavailable": unavailable,
             "nonfresh": nonfresh,
+            "runtime_stale": runtime_stale,
             "warnings": publication.get("warnings", []),
             "shadow_cycle": shadow,
             "soak": health,
@@ -1967,7 +2300,7 @@ def build_dashboard(root: Path, *, now: datetime | None = None) -> dict[str, Any
     }
 
 
-def build_series(root: Path, metric_id: str, range_id: str = "3m") -> dict[str, Any]:
+def _build_series(root: Path, metric_id: str, range_id: str = "3m") -> dict[str, Any]:
     root = root.resolve()
     if metric_id in PREMIUM_METRICS:
         return premium_history(root, metric_id, range_id)
@@ -2282,7 +2615,12 @@ def build_series(root: Path, metric_id: str, range_id: str = "3m") -> dict[str, 
     if metric_id == "net_liquidity_proxy":
         with closing(_connect_readonly(root / "data" / "channel.sqlite3")) as connection:
             metric_views = {
-                item_id: _metric_view(item_id, metric, connection)
+                item_id: _metric_view(
+                    item_id,
+                    metric,
+                    connection,
+                    published_at=str(snapshot.get("completed_at") or "") or None,
+                )
                 for item_id, metric in snapshot.get("metrics", {}).items()
                 if isinstance(metric, dict)
             }
@@ -2292,7 +2630,12 @@ def build_series(root: Path, metric_id: str, range_id: str = "3m") -> dict[str, 
                 since = (
                     _parse_date(latest_date) - timedelta(days=RANGE_DAYS[range_id])
                 ).isoformat()
-            points = _proxy_history(connection, metric_views, since=since)
+            points = _proxy_history(
+                connection,
+                metric_views,
+                since=since,
+                published_at=str(snapshot.get("completed_at") or "") or None,
+            )
         return {
             "metric_id": metric_id,
             "label": "流动性参考值",
@@ -2310,20 +2653,20 @@ def build_series(root: Path, metric_id: str, range_id: str = "3m") -> dict[str, 
         raise ValueError("metric is unavailable in the formal snapshot")
     source_id = metric["source_id"]
     with closing(_connect_readonly(root / "data" / "channel.sqlite3")) as connection:
-        latest = connection.execute(
-            """
-            SELECT observed_at FROM observations
-            WHERE metric_id = ? AND source_id = ?
-            ORDER BY observed_at DESC LIMIT 1
-            """,
-            (metric_id, source_id),
-        ).fetchone()
+        snapshot_observed_at = metric.get("observed_at")
         since = None
-        if latest and range_id != "all":
+        if snapshot_observed_at and range_id != "all":
             since = (
-                _parse_date(latest["observed_at"]) - timedelta(days=RANGE_DAYS[range_id])
+                _parse_date(str(snapshot_observed_at)) - timedelta(days=RANGE_DAYS[range_id])
             ).isoformat()
-        points = _history_rows(connection, metric_id, source_id, since=since)
+        points = _history_rows(
+            connection,
+            metric_id,
+            source_id,
+            since=since,
+            until=str(snapshot_observed_at) if snapshot_observed_at else None,
+            published_at=str(snapshot.get("completed_at") or "") or None,
+        )
         revisions = connection.execute(
             """
             SELECT observed_at, old_value, new_value, detected_at
@@ -2346,4 +2689,15 @@ def build_series(root: Path, metric_id: str, range_id: str = "3m") -> dict[str, 
             for row in points
         ],
         "revisions": [dict(row) for row in revisions],
+    }
+
+
+def build_series(root: Path, metric_id: str, range_id: str = "3m") -> dict[str, Any]:
+    root = root.resolve()
+    payload = _build_series(root, metric_id, range_id)
+    snapshot = _load_json(root / "data" / "snapshots" / "latest.json")
+    return {
+        **payload,
+        "release_id": snapshot.get("run_id"),
+        "snapshot_run_id": snapshot.get("run_id"),
     }

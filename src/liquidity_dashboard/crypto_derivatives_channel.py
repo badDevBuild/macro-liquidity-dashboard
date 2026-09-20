@@ -25,6 +25,7 @@ UTC = timezone.utc
 SCHEMA_VERSION = "1.1"
 ELIGIBLE_STATUSES = {"fresh_network", "fresh_cache"}
 SOURCE_ID = "official_usdt_perpetuals_3_venues"
+OPEN_INTEREST_METHODOLOGY_VERSION = "single_sided_v2"
 
 
 class CryptoDerivativesChannelError(RuntimeError):
@@ -135,6 +136,7 @@ def _validate_history_points(points: list[dict[str, Any]], *, now: datetime, lab
         clean[iso_z(observed)] = {
             "observed_at": iso_z(observed),
             "open_interest_usd_millions": round(numeric, 6),
+            "methodology_version": point.get("methodology_version"),
         }
     if not clean:
         raise CryptoDerivativesChannelError(f"{label} has no usable history points")
@@ -331,6 +333,7 @@ def _binance_record(
             / 1_000_000,
             4,
         ),
+        "open_interest_methodology_version": OPEN_INTEREST_METHODOLOGY_VERSION,
         "funding_rate_per_interval_pct": round(funding_decimal * 100, 8),
         "funding_interval_hours": round(interval_hours, 4),
         "funding_annualized_pct": round(
@@ -420,6 +423,7 @@ def _okx_record(
             _number(interest.get("oiUsd"), "OKX open interest USD") / 1_000_000,
             4,
         ),
+        "open_interest_methodology_version": OPEN_INTEREST_METHODOLOGY_VERSION,
         "funding_rate_per_interval_pct": round(funding_decimal * 100, 8),
         "funding_interval_hours": round(interval_hours, 4),
         "funding_annualized_pct": round(
@@ -472,10 +476,14 @@ def _bybit_record(
             _number(row.get("price24hPcnt"), "Bybit 24h price change") * 100, 6
         ),
         "open_interest_usd_millions": round(
-            _number(row.get("openInterestValue"), "Bybit open interest value")
+            _number(
+                row.get("singleOpenInterestValue"),
+                "Bybit single-sided open interest value",
+            )
             / 1_000_000,
             4,
         ),
+        "open_interest_methodology_version": OPEN_INTEREST_METHODOLOGY_VERSION,
         "funding_rate_per_interval_pct": round(funding_decimal * 100, 8),
         "funding_interval_hours": round(interval_hours, 4),
         "funding_annualized_pct": round(
@@ -713,6 +721,7 @@ def _binance_open_interest_history(
                 row.get("sumOpenInterestValue"), "Binance OI history value"
             )
             / 1_000_000,
+            "methodology_version": OPEN_INTEREST_METHODOLOGY_VERSION,
         }
         for row in _rows(payload, "Binance OI history")
         if isinstance(row, dict)
@@ -753,6 +762,7 @@ def _okx_open_interest_history(
         {
             "observed_at": iso_z(_milliseconds(row[0], "OKX OI history time")),
             "open_interest_usd_millions": _number(row[3], "OKX OI history USD") / 1_000_000,
+            "methodology_version": OPEN_INTEREST_METHODOLOGY_VERSION,
         }
         for row in raw_rows
     ]
@@ -797,10 +807,12 @@ def _bybit_open_interest_history(
             {
                 "observed_at": iso_z(_milliseconds(timestamp, "Bybit OI history time")),
                 "open_interest_usd_millions": _number(
-                    row.get("openInterest"), "Bybit OI history value"
+                    row.get("singleOpenInterest"),
+                    "Bybit single-sided OI history value",
                 )
                 * price
                 / 1_000_000,
+                "methodology_version": OPEN_INTEREST_METHODOLOGY_VERSION,
             }
         )
     return _validate_history_points(points, now=now, label="Bybit OI history")
@@ -854,7 +866,13 @@ def _aggregate_open_interest_change(
             str(record.get("observed_at")),
             hours=hours,
         )
-        if prior is None:
+        if (
+            prior is None
+            or record.get("open_interest_methodology_version")
+            != OPEN_INTEREST_METHODOLOGY_VERSION
+            or prior.get("methodology_version")
+            != OPEN_INTEREST_METHODOLOGY_VERSION
+        ):
             return {
                 "days": round(hours / 24, 4),
                 "change": None,
@@ -975,6 +993,7 @@ def _aggregate_asset(
             "coverage_key": "+".join(venues),
             "venue_count": len(venues),
             "open_interest_usd_millions": round(open_interest, 4),
+            "open_interest_methodology_version": OPEN_INTEREST_METHODOLOGY_VERSION,
             "open_interest_changes": open_interest_changes,
             "funding_8h_equivalent_pct": round(funding_8h_equivalent, 8),
             "funding_annualized_pct": round(funding, 6),
@@ -1052,6 +1071,7 @@ def _merge_history(
                     "coverage": seed.get("coverage") or aggregate.get("coverage", []),
                     "coverage_key": seed.get("coverage_key") or aggregate.get("coverage_key"),
                     "open_interest_usd_millions": prior_value,
+                    "open_interest_methodology_version": OPEN_INTEREST_METHODOLOGY_VERSION,
                 }
             )
             by_day[day] = seed
@@ -1062,6 +1082,7 @@ def _merge_history(
                 "coverage",
                 "coverage_key",
                 "open_interest_usd_millions",
+                "open_interest_methodology_version",
                 "funding_8h_equivalent_pct",
                 "funding_annualized_pct",
                 "price_usd",
@@ -1098,6 +1119,7 @@ def _change(
     *,
     hours: int,
     coverage_key_field: str = "coverage_key",
+    methodology_version_field: str | None = None,
 ) -> dict[str, Any]:
     latest_time = _parse_moment(latest.get("observed_at"))
     if latest_time is None or latest.get(field) is None:
@@ -1110,6 +1132,11 @@ def _change(
                 observed is None
                 or item.get(field) is None
                 or item.get(coverage_key_field) != latest.get(coverage_key_field)
+                or (
+                    methodology_version_field is not None
+                    and item.get(methodology_version_field)
+                    != latest.get(methodology_version_field)
+                )
             ):
                 continue
             age_hours = (latest_time - observed).total_seconds() / 3600
@@ -1183,6 +1210,11 @@ def _metric(
             "coverage": coverage if coverage is not None else aggregate.get("coverage", []),
             "coverage_key": coverage_key or aggregate.get("coverage_key"),
             "scope": scope or "Binance、OKX、Bybit 的 USDT 永续；不是全市场",
+            "methodology_version": (
+                aggregate.get("open_interest_methodology_version")
+                if metric_id.endswith("_open_interest")
+                else "venue_weighted_v1"
+            ),
         },
     }
 
@@ -1217,6 +1249,14 @@ def _asset_metrics(
     }
     result: dict[str, dict[str, Any]] = {}
     for suffix, (field, unit, coverage_key_field) in definitions.items():
+        comparable_points = points
+        if suffix == "open_interest":
+            comparable_points = [
+                item
+                for item in points
+                if item.get("open_interest_methodology_version")
+                == aggregate.get("open_interest_methodology_version")
+            ]
         if suffix == "open_interest" and isinstance(aggregate.get("open_interest_changes"), dict):
             changes = aggregate["open_interest_changes"]
         else:
@@ -1238,7 +1278,7 @@ def _asset_metrics(
             }
         sparkline = [
             {"observed_at": item["observed_at"], "value": item[field]}
-            for item in points
+            for item in comparable_points
             if item.get(field) is not None
         ]
         metric_id = f"derivatives_{asset.lower()}_{suffix}"
@@ -1553,7 +1593,8 @@ def run_crypto_derivatives_channel(
         },
         "methodology": {
             "role": "观察杠杆资金拥挤度，不进入宏观流动性公式。",
-            "open_interest": "三家交易所 USDT 永续名义未平仓金额相加；24 小时和 7 天变化使用同一批交易所的官方历史快照。",
+            "open_interest": "三家交易所 USDT 永续单边名义未平仓金额相加；Bybit 明确使用 singleOpenInterest 字段；24 小时和 7 天变化只比较同一批交易所、同一方法版本的官方历史快照。",
+            "open_interest_methodology_version": OPEN_INTEREST_METHODOLOGY_VERSION,
             "funding": "各交易所资金费率按实际周期年化，再按未平仓金额加权。",
             "account_ratio": "三家多头账户占比取中位数；统计账户数量，不代表仓位或资金规模。",
             "taker_flow": "Binance、OKX 过去 24 小时主动买入占比分别计算后取中位数；代表成交方向，不代表持仓方向。",
@@ -1576,6 +1617,24 @@ def load_crypto_derivatives_payload(root: Path) -> dict[str, Any]:
         # not depend on a successful network refresh first.
         assets = payload.get("assets", {})
         payload_metrics = payload.setdefault("metrics", {})
+        methodology_version = payload.get("methodology", {}).get(
+            "open_interest_methodology_version"
+        )
+        if methodology_version != OPEN_INTEREST_METHODOLOGY_VERSION:
+            for metric_id, metric in payload_metrics.items():
+                if not isinstance(metric, dict) or not metric_id.endswith(
+                    ("_open_interest", "_funding_8h_equivalent", "_funding_annualized")
+                ):
+                    continue
+                metric["publication_quality_status"] = metric.get("quality_status")
+                metric["quality_status"] = "needs_methodology_refresh"
+                metric["available_for_analysis"] = False
+                metric.setdefault("metadata", {})["migration_required"] = (
+                    OPEN_INTEREST_METHODOLOGY_VERSION
+                )
+            payload.setdefault("quality", {}).setdefault("warnings", []).append(
+                "未平仓量与资金费率权重仍是旧双边口径；刷新为 single_sided_v2 前不进入分析。"
+            )
         for asset, asset_payload in assets.items():
             if not isinstance(asset_payload, dict) or not asset_payload.get(
                 "available_for_analysis"

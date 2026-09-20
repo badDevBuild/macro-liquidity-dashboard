@@ -6,7 +6,7 @@ import json
 import math
 import os
 import subprocess
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
@@ -240,19 +240,59 @@ def _metric(
     }
 
 
+def _has_plausible_session_continuity(newer: date, older: date) -> bool:
+    if newer <= older:
+        return False
+    # US exchange closures can create a three-day weekend. A wider gap means
+    # the source history is incomplete enough that a streak claim is unsafe.
+    return newer - older <= timedelta(days=4)
+
+
+def _window_total(
+    rows: list[dict[str, Any]], expected_sessions: int
+) -> tuple[float | None, dict[str, Any]]:
+    window = rows[-expected_sessions:]
+    actual = len(window)
+    complete = actual == expected_sessions
+    value = (
+        sum(float(row["total_net_inflow"]) for row in window)
+        if complete
+        else None
+    )
+    return value, {
+        "expected_sessions": expected_sessions,
+        "actual_sessions": actual,
+        "coverage_complete": complete,
+        "missing_policy": "incomplete_window_is_null",
+    }
+
+
 def _streak(rows: list[dict[str, Any]]) -> dict[str, Any]:
     if not rows:
         return {"direction": "none", "sessions": 0}
     latest_value = float(rows[-1]["total_net_inflow"])
     direction = "inflow" if latest_value > 0 else "outflow" if latest_value < 0 else "flat"
     sessions = 0
+    newer_date: date | None = None
+    continuity_complete = True
     for row in reversed(rows):
+        row_date = _parse_date(row["date"])
+        if newer_date is not None and not _has_plausible_session_continuity(
+            newer_date, row_date
+        ):
+            continuity_complete = False
+            break
         value = float(row["total_net_inflow"])
         current = "inflow" if value > 0 else "outflow" if value < 0 else "flat"
         if current != direction:
             break
         sessions += 1
-    return {"direction": direction, "sessions": sessions}
+        newer_date = row_date
+    return {
+        "direction": direction,
+        "sessions": sessions,
+        "continuity_complete": continuity_complete,
+    }
 
 
 def _asset_payload(
@@ -288,10 +328,8 @@ def _asset_payload(
         and (latest is None or response_latest["date"] > latest["date"])
     ):
         pending_date = response_latest["date"]
-    recent_5 = settled_rows[-5:]
-    recent_20 = settled_rows[-20:]
-    rolling_5 = sum(float(row["total_net_inflow"]) for row in recent_5) if recent_5 else None
-    rolling_20 = sum(float(row["total_net_inflow"]) for row in recent_20) if recent_20 else None
+    rolling_5, coverage_5 = _window_total(settled_rows, 5)
+    rolling_20, coverage_20 = _window_total(settled_rows, 20)
     prefix = f"etf_{symbol.lower()}"
     observed_at = latest["date"] if latest else None
     flow_points = [
@@ -316,7 +354,11 @@ def _asset_payload(
             fetched_at,
             source,
             quality_status,
-            metadata={"asset": symbol, "window": "last_5_settled_sessions"},
+            metadata={
+                "asset": symbol,
+                "window": "last_5_settled_sessions",
+                **coverage_5,
+            },
         ),
         f"{prefix}_net_flow_20d": _metric(
             f"{prefix}_net_flow_20d",
@@ -325,7 +367,11 @@ def _asset_payload(
             fetched_at,
             source,
             quality_status,
-            metadata={"asset": symbol, "window": "last_20_settled_sessions"},
+            metadata={
+                "asset": symbol,
+                "window": "last_20_settled_sessions",
+                **coverage_20,
+            },
         ),
         f"{prefix}_aum": _metric(
             f"{prefix}_aum",
@@ -367,6 +413,8 @@ def _asset_payload(
         "rolling": {
             "5_sessions_usd_millions": _usd_millions(rolling_5),
             "20_sessions_usd_millions": _usd_millions(rolling_20),
+            "5_sessions_coverage": coverage_5,
+            "20_sessions_coverage": coverage_20,
         },
         "streak": _streak(settled_rows),
         "history": flow_points,

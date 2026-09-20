@@ -200,6 +200,22 @@ class StablecoinParserTests(unittest.TestCase):
                 fetched_at="2026-08-31T01:00:00Z",
             )
 
+    def test_other_supply_does_not_treat_missing_prior_asset_as_zero(self) -> None:
+        history, assets = fixture_bodies()
+        composition = json.loads(assets)
+        composition["peggedAssets"][2].pop("circulatingPrevWeek")
+        payload = build_stablecoin_payload(
+            history,
+            json.dumps(composition).encode(),
+            fixture_config(),
+            now=datetime(2026, 8, 31, 2, tzinfo=timezone.utc),
+            run_id="run-missing-prior",
+            fetched_at="2026-08-31T01:00:00Z",
+        )
+        other = payload["metrics"]["stablecoin_other_supply"]
+        self.assertIsNone(other["changes"]["1w"]["change"])
+        self.assertIsNone(other["changes"]["1w"]["prior_value"])
+
 
 class StablecoinChannelFallbackTests(unittest.TestCase):
     def test_fresh_cache_is_used_without_turning_missing_into_zero(self) -> None:

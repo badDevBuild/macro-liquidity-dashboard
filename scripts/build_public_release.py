@@ -17,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from liquidity_dashboard.model import build_dashboard  # noqa: E402
+from liquidity_dashboard.public_status import public_cycle_status  # noqa: E402
 
 
 def utc_now() -> str:
@@ -38,6 +39,14 @@ def copy_file(source: Path, destination: Path, *, required: bool = True) -> bool
     destination.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(source, destination)
     return True
+
+
+def write_json(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
 
 
 def backup_database(source: Path, destination: Path) -> None:
@@ -82,6 +91,24 @@ def file_inventory(root: Path) -> list[dict[str, Any]]:
             }
         )
     return inventory
+
+
+def validate_public_json(root: Path) -> None:
+    forbidden_fragments = (
+        "/Users/",
+        "Traceback (most recent call last)",
+        "Authorization: Bearer ",
+        "x-soso-api-key",
+        "sk-proj-",
+    )
+    for path in root.rglob("*.json"):
+        text = path.read_text(encoding="utf-8")
+        match = next((item for item in forbidden_fragments if item in text), None)
+        if match:
+            raise ValueError(
+                f"public JSON contains forbidden internal fragment {match!r}: "
+                f"{path.relative_to(root)}"
+            )
 
 
 def build_release(source_root: Path, output_root: Path) -> dict[str, Any]:
@@ -158,12 +185,17 @@ def build_release(source_root: Path, output_root: Path) -> dict[str, Any]:
             )
 
         status_source = source_root / "data" / "status"
-        for status_path in sorted(status_source.glob("*.json")):
+        for status_name in ("health-14d.json", "agent-health-14d.json"):
             copy_file(
-                status_path,
-                output_root / "data" / "status" / status_path.name,
+                status_source / status_name,
+                output_root / "data" / "status" / status_name,
                 required=False,
             )
+        cycle_status = read_json(status_source / "latest-shadow-cycle.json")
+        write_json(
+            output_root / "data" / "status" / "latest-shadow-cycle.json",
+            public_cycle_status(cycle_status),
+        )
 
         context_latest = source_root / "data" / "context" / "latest.json"
         copy_file(
@@ -202,6 +234,7 @@ def build_release(source_root: Path, output_root: Path) -> dict[str, Any]:
         dashboard = build_dashboard(output_root)
         if dashboard.get("snapshot", {}).get("run_id") != snapshot_run_id:
             raise ValueError("release snapshot does not match the source snapshot")
+        validate_public_json(output_root)
 
         manifest = {
             "schema_version": "1.0",

@@ -1,13 +1,14 @@
-const SHELL_CACHE = "macro-liquidity-shell-v41";
-const DATA_CACHE = "macro-liquidity-data-v1";
+const CACHE_PREFIX = "macro-liquidity-";
+const SHELL_CACHE = `${CACHE_PREFIX}shell-v43`;
+const DATA_CACHE = `${CACHE_PREFIX}data-v3`;
 const scopedUrl = (path) => new URL(path, self.registration.scope).href;
 const scopedPath = (path) => new URL(path, self.registration.scope).pathname;
 const SHELL = [
   self.registration.scope,
   scopedUrl("index.html"),
-  scopedUrl("assets/app.css?v=41"),
-  scopedUrl("assets/coinbase-premium.js?v=41"),
-  scopedUrl("assets/app.js?v=41"),
+  scopedUrl("assets/app.css?v=43"),
+  scopedUrl("assets/coinbase-premium.js?v=43"),
+  scopedUrl("assets/app.js?v=43"),
   scopedUrl("assets/icon.svg"),
   scopedUrl("manifest.webmanifest")
 ];
@@ -22,7 +23,7 @@ self.addEventListener("activate", (event) => {
     caches.keys().then((keys) =>
       Promise.all(
         keys
-          .filter((key) => ![SHELL_CACHE, DATA_CACHE].includes(key))
+          .filter((key) => key.startsWith(CACHE_PREFIX) && ![SHELL_CACHE, DATA_CACHE].includes(key))
           .map((key) => caches.delete(key))
       )
     )

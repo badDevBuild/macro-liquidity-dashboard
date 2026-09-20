@@ -13,6 +13,7 @@ sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from liquidity_channel.core import FetchError, FetchResponse  # noqa: E402
 from liquidity_dashboard.crypto_derivatives_channel import (  # noqa: E402
+    load_crypto_derivatives_payload,
     run_crypto_derivatives_channel,
 )
 
@@ -132,9 +133,21 @@ class FakeDerivativesFetcher:
                 "time": timestamp,
                 "result": {
                     "list": [
-                        {"openInterest": "3000", "timestamp": str(timestamp - hour)},
-                        {"openInterest": "2700", "timestamp": str(timestamp - day)},
-                        {"openInterest": "2400", "timestamp": str(timestamp - 7 * day)},
+                        {
+                            "openInterest": "3000",
+                            "singleOpenInterest": "1500",
+                            "timestamp": str(timestamp - hour),
+                        },
+                        {
+                            "openInterest": "2700",
+                            "singleOpenInterest": "1350",
+                            "timestamp": str(timestamp - day),
+                        },
+                        {
+                            "openInterest": "2400",
+                            "singleOpenInterest": "1200",
+                            "timestamp": str(timestamp - 7 * day),
+                        },
                     ]
                 },
             }
@@ -162,6 +175,7 @@ class FakeDerivativesFetcher:
                             "markPrice": "100",
                             "price24hPcnt": "0.02",
                             "openInterestValue": "300000",
+                            "singleOpenInterestValue": "150000",
                             "fundingRate": "0.0003",
                             "fundingIntervalHour": "8",
                         }
@@ -179,6 +193,32 @@ class OptionalSignalFailureFetcher(FakeDerivativesFetcher):
 
 
 class CryptoDerivativesChannelTests(unittest.TestCase):
+    def test_legacy_double_sided_snapshot_is_not_analysis_eligible(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            target = root / "data" / "crypto" / "derivatives"
+            target.mkdir(parents=True)
+            (target / "latest.json").write_text(
+                json.dumps({
+                    "assets": {},
+                    "metrics": {
+                        "derivatives_btc_open_interest": {
+                            "value": 200,
+                            "quality_status": "fresh_network",
+                            "available_for_analysis": True,
+                            "metadata": {},
+                        }
+                    },
+                    "quality": {"warnings": []},
+                    "methodology": {},
+                }),
+                encoding="utf-8",
+            )
+            payload = load_crypto_derivatives_payload(root)
+        metric = payload["metrics"]["derivatives_btc_open_interest"]
+        self.assertFalse(metric["available_for_analysis"])
+        self.assertEqual(metric["quality_status"], "needs_methodology_refresh")
+
     def test_aggregates_three_official_venues_without_claiming_full_market(self) -> None:
         now = datetime(2026, 8, 31, 6, 30, tzinfo=timezone.utc)
         with tempfile.TemporaryDirectory() as temporary:
@@ -192,10 +232,10 @@ class CryptoDerivativesChannelTests(unittest.TestCase):
             btc = payload["assets"]["BTC"]
             self.assertEqual(payload["status"], "ready")
             self.assertEqual(btc["coverage"], ["binance", "bybit", "okx"])
-            self.assertAlmostEqual(btc["open_interest_usd_millions"], 0.6)
-            self.assertAlmostEqual(btc["funding_annualized_pct"], 25.55, places=4)
+            self.assertAlmostEqual(btc["open_interest_usd_millions"], 0.45)
+            self.assertAlmostEqual(btc["funding_annualized_pct"], 23.116667, places=4)
             self.assertAlmostEqual(
-                btc["funding_8h_equivalent_pct"], 25.55 / (365 * 3), places=7
+                btc["funding_8h_equivalent_pct"], 23.116667 / (365 * 3), places=7
             )
             self.assertAlmostEqual(btc["price_change_24h_pct"], 2.0)
             self.assertAlmostEqual(btc["account_long_pct"], 55.0)
@@ -205,7 +245,7 @@ class CryptoDerivativesChannelTests(unittest.TestCase):
             self.assertIn("不是全市场", payload["methodology"]["boundary"])
             self.assertAlmostEqual(
                 payload["metrics"]["derivatives_btc_open_interest"]["changes"]["1d"]["change"],
-                0.06,
+                0.045,
             )
             self.assertAlmostEqual(
                 payload["metrics"]["derivatives_btc_open_interest"]["changes"]["1w"]["percent_change"],
@@ -216,9 +256,15 @@ class CryptoDerivativesChannelTests(unittest.TestCase):
             )
             self.assertAlmostEqual(
                 payload["metrics"]["derivatives_btc_funding_8h_equivalent"]["value"],
-                25.55 / (365 * 3),
+                23.116667 / (365 * 3),
                 places=6,
             )
+            self.assertEqual(
+                payload["metrics"]["derivatives_btc_open_interest"]["metadata"]["methodology_version"],
+                "single_sided_v2",
+            )
+            bybit = next(item for item in btc["venues"] if item["venue"] == "bybit")
+            self.assertAlmostEqual(bybit["open_interest_usd_millions"], 0.15)
             oi_points = payload["metrics"]["derivatives_btc_open_interest"]["sparkline"]
             self.assertEqual(len(oi_points), 3)
             self.assertEqual(len({item["observed_at"][:10] for item in oi_points}), 3)

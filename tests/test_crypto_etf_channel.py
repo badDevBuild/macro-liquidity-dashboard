@@ -117,7 +117,20 @@ class CryptoEtfChannelTests(unittest.TestCase):
             self.assertEqual(btc["observed_at"], "2026-08-29")
             self.assertEqual(btc["pending_date"], "2026-08-30")
             self.assertEqual(btc["latest"]["total_net_inflow"], 200.0)
-            self.assertEqual(btc["rolling"]["5_sessions_usd_millions"], 100.0)
+            self.assertIsNone(btc["rolling"]["5_sessions_usd_millions"])
+            self.assertEqual(
+                btc["rolling"]["5_sessions_coverage"],
+                {
+                    "expected_sessions": 5,
+                    "actual_sessions": 2,
+                    "coverage_complete": False,
+                    "missing_policy": "incomplete_window_is_null",
+                },
+            )
+            self.assertIsNone(payload["metrics"]["etf_btc_net_flow_5d"]["value"])
+            self.assertFalse(
+                payload["metrics"]["etf_btc_net_flow_5d"]["available_for_analysis"]
+            )
             self.assertEqual(
                 payload["metrics"]["etf_btc_net_flow_latest"]["value"], 200.0
             )

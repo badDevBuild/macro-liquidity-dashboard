@@ -59,7 +59,7 @@ ALLOWED_DAILY_UPDATE_STATUSES = {
     "comparison_unavailable",
 }
 AGENT_SCHEMA_VERSION = "1.5"
-AGENT_PROMPT_VERSION = "macro-liquidity-morning-v9"
+AGENT_PROMPT_VERSION = "macro-liquidity-morning-v10"
 AGENT_MODEL_PROVIDER = "openai_codex_subscription"
 AGENT_MODEL_ID = "gpt-5.6-sol"
 AGENT_REASONING_EFFORT = "medium"
@@ -104,6 +104,9 @@ def _proxy_metric(
             "value": proxy.get("value"),
             "observed_at": proxy.get("observed_at"),
             "changes": {"1w": one_week},
+            "available_for_analysis": proxy.get("available_for_analysis") is True,
+            "quality_status": proxy.get("quality_status"),
+            "methodology_version": proxy.get("methodology_version"),
         }
     if metric_id == "net_liquidity_proxy_latest_release":
         latest_release = proxy_changes.get("latest_release")
@@ -113,6 +116,9 @@ def _proxy_metric(
             "value": proxy.get("value"),
             "observed_at": proxy.get("observed_at"),
             "changes": {"latest_release": latest_release},
+            "available_for_analysis": proxy.get("available_for_analysis") is True,
+            "quality_status": proxy.get("quality_status"),
+            "methodology_version": proxy.get("methodology_version"),
         }
     if metric_id == "net_liquidity_proxy_weekly":
         if isinstance(weekly_proxy, dict):
@@ -121,6 +127,9 @@ def _proxy_metric(
             "value": proxy.get("trend_latest_value"),
             "observed_at": proxy.get("trend_latest_observed_at"),
             "changes": proxy.get("trend_changes", {}),
+            "available_for_analysis": proxy.get("available_for_analysis") is True,
+            "quality_status": proxy.get("quality_status"),
+            "methodology_version": proxy.get("methodology_version"),
         }
     return None
 
@@ -174,7 +183,7 @@ def expected_evidence(
     """
     metric_id = evidence.get("metric_id")
     metric = _metric_for_evidence(metric_id, metrics, proxy, weekly_proxy)
-    if not isinstance(metric, dict) or metric.get("available_for_analysis") is False:
+    if not isinstance(metric, dict) or metric.get("available_for_analysis") is not True:
         return None
 
     value = metric.get("value")
@@ -196,7 +205,10 @@ def expected_evidence(
 
     if window == "since_previous_run":
         update = _delta_update(str(metric_id), analysis_delta)
-        if not isinstance(update, dict):
+        if (
+            not isinstance(update, dict)
+            or update.get("comparison_status") != "comparable"
+        ):
             return None
         update_value = update.get("value")
         change = update.get("change")

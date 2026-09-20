@@ -680,6 +680,17 @@ class ChannelStore:
                 detected_at TEXT NOT NULL,
                 raw_sha256 TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS observation_versions (
+                run_id TEXT NOT NULL,
+                metric_id TEXT NOT NULL,
+                source_id TEXT NOT NULL,
+                observed_at TEXT NOT NULL,
+                value REAL NOT NULL,
+                unit TEXT NOT NULL,
+                recorded_at TEXT NOT NULL,
+                raw_sha256 TEXT NOT NULL,
+                PRIMARY KEY (run_id, metric_id, source_id, observed_at)
+            );
             CREATE TABLE IF NOT EXISTS source_runs (
                 run_id TEXT NOT NULL,
                 source_id TEXT NOT NULL,
@@ -704,6 +715,10 @@ class ChannelStore:
                 ON observations (metric_id, source_id, observed_at DESC);
             CREATE INDEX IF NOT EXISTS idx_channel_runs_started
                 ON channel_runs (started_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_observation_versions_asof
+                ON observation_versions (
+                    metric_id, source_id, observed_at, recorded_at DESC
+                );
             """
         )
         self.db.commit()
@@ -774,6 +789,24 @@ class ChannelStore:
         revisions = 0
         with self.db:
             for observation in observations:
+                self.db.execute(
+                    """
+                    INSERT OR REPLACE INTO observation_versions (
+                        run_id, metric_id, source_id, observed_at, value, unit,
+                        recorded_at, raw_sha256
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        run_id,
+                        observation.metric_id,
+                        observation.source_id,
+                        observation.observed_at,
+                        observation.value,
+                        observation.unit,
+                        seen_at,
+                        raw_sha256,
+                    ),
+                )
                 existing = self.db.execute(
                     """
                     SELECT value FROM observations

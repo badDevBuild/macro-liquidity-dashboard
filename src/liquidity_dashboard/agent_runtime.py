@@ -165,6 +165,39 @@ def _changed_number(current: Any, previous: Any) -> bool:
     return current != previous
 
 
+def _comparison_identity(metric: dict[str, Any]) -> dict[str, Any]:
+    metadata = metric.get("metadata")
+    if not isinstance(metadata, dict):
+        metadata = {}
+    coverage = metadata.get("coverage")
+    if isinstance(coverage, list):
+        coverage = tuple(sorted(str(item) for item in coverage))
+    return {
+        "unit": metric.get("unit"),
+        "source_id": metric.get("source_id"),
+        "cadence": metric.get("cadence"),
+        "coverage_key": metric.get("coverage_key") or metadata.get("coverage_key"),
+        "coverage": coverage,
+        "methodology_version": metric.get("methodology_version")
+        or metadata.get("methodology_version"),
+        "window": metadata.get("window"),
+        "scope": metadata.get("scope"),
+        "observation_method": metadata.get("observation_method"),
+    }
+
+
+def _comparison_mismatches(
+    current: dict[str, Any], previous: dict[str, Any]
+) -> list[str]:
+    current_identity = _comparison_identity(current)
+    previous_identity = _comparison_identity(previous)
+    return [
+        key
+        for key in current_identity
+        if current_identity[key] != previous_identity[key]
+    ]
+
+
 def _metric_update(
     metric_id: str,
     current: dict[str, Any],
@@ -176,8 +209,10 @@ def _metric_update(
     previous_date = previous.get("observed_at")
     if current_date == previous_date and not _changed_number(current_value, previous_value):
         return None
+    mismatches = _comparison_mismatches(current, previous)
+    comparable = not mismatches
     change = None
-    if isinstance(current_value, (int, float)) and isinstance(previous_value, (int, float)):
+    if comparable and isinstance(current_value, (int, float)) and isinstance(previous_value, (int, float)):
         change = float(current_value) - float(previous_value)
         if math.isclose(change, 0.0, abs_tol=1e-9):
             change = 0.0
@@ -191,6 +226,13 @@ def _metric_update(
         "previous_observed_at": previous_date,
         "change": change,
         "new_observation": current_date != previous_date,
+        "comparison_status": "comparable" if comparable else "not_comparable",
+        "comparison_reason": (
+            None
+            if comparable
+            else "comparison contract changed: " + ", ".join(mismatches)
+        ),
+        "comparison_mismatches": mismatches,
     }
 
 
@@ -281,15 +323,18 @@ def _analysis_delta(
         event_changed = (
             current_topic.get("event_id") != previous_topic.get("event_id")
         )
-        changed = (
+        outcome_changed = (
             current_top.get("outcome_id") != previous_top.get("outcome_id")
+        )
+        changed = (
+            outcome_changed
             or _changed_number(current_probability, previous_probability)
             or current_topic.get("updated_at") != previous_topic.get("updated_at")
         )
         if not changed:
             continue
         probability_change = None
-        if not event_changed and isinstance(current_probability, (int, float)) and isinstance(
+        if not event_changed and not outcome_changed and isinstance(current_probability, (int, float)) and isinstance(
             previous_probability, (int, float)
         ):
             probability_change = round(
@@ -309,8 +354,13 @@ def _analysis_delta(
                 "probability_change_percentage_points": probability_change,
                 "updated_at": current_topic.get("updated_at"),
                 "event_changed": event_changed,
+                "outcome_changed": outcome_changed,
                 "comparison_status": (
-                    "new_event_not_comparable" if event_changed else "comparable"
+                    "new_event_not_comparable"
+                    if event_changed
+                    else "top_outcome_changed_not_comparable"
+                    if outcome_changed
+                    else "comparable"
                 ),
             }
         )
@@ -891,6 +941,13 @@ def build_agent_prompt(context: dict[str, Any], retry_errors: list[str] | None =
 4. 找出有精确数值证据的主要驱动和矛盾信号；
 5. 逐条阅读过去 24 小时新闻的 content，并筛选未来 90 天事件。新闻写清“发生了什么、怎么影响、为什么今天要看”；未来事件写清“官方日程是什么、当前哪些指标或市场押注与它相关、公布后通过什么渠道影响流动性”；无关项不输出；
 6. 给出最多 3 个可以由现有指标继续验证的观察条件，并明确缺失、滞后、频率不一致和无法判断的部分。
+
+分析顺序：
+- 先写事实：只陈述已经核验的数值、日期、变化窗口和确定性公式结果；
+- 再写解释：说明这些事实可能通过什么渠道影响市场，所有因果都必须是条件性的；
+- 再写替代解释：把与主判断相冲突、或可能造成同样现象的证据放进 contradictions，不得省略；
+- 最后写“什么会改变判断”：market_implications 的 confirm_metric_ids 和 invalidate_metric_ids 必须真正对应确认或推翻判断的指标，watch_items 写清触发条件；
+- 每个 layer_analysis.conclusion 第一层意思是事实结论，第二层意思才是解释；不得把解释包装成已经发生的事实。
 
 硬约束：
 - 输出简体中文，白话名称在前，必要时括号保留专业名词；

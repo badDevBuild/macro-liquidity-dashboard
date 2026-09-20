@@ -2,16 +2,21 @@
 from __future__ import annotations
 
 import argparse
+import fcntl
 import json
+import os
 import shutil
 import subprocess
 import sys
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
 STATUS_DIR = ROOT / "data" / "status"
+STAGE_TIMEOUT_SECONDS = 1800
+ACTIVE_CYCLE_ID: str | None = None
 
 
 def utc_now() -> str:
@@ -28,9 +33,70 @@ def atomic_json(path: Path, payload: dict[str, object]) -> None:
     temporary.replace(path)
 
 
+def persist_cycle(payload: dict[str, object]) -> None:
+    cycle_id = str(payload.get("cycle_id") or "unknown-cycle")
+    atomic_json(STATUS_DIR / "cycles" / f"{cycle_id}.json", payload)
+    atomic_json(STATUS_DIR / "latest-shadow-cycle.json", payload)
+
+
+def degraded_modules(cycle: dict[str, object]) -> list[str]:
+    """Return optional modules that failed or produced unusable runner output."""
+    modules = (
+        "stablecoin",
+        "crypto_etf",
+        "crypto_derivatives",
+        "cross_asset",
+        "yen_carry",
+        "energy",
+        "coinbase_premium",
+        "expectations",
+        "context",
+        "agent",
+    )
+    bad_statuses = {
+        "failed",
+        "error",
+        "invalid",
+        "invalid_runner_output",
+        "unavailable",
+        "blocked",
+        "degraded",
+        "partial",
+    }
+    degraded: list[str] = []
+    for module in modules:
+        exit_code = cycle.get(f"{module}_exit_code")
+        status = str(cycle.get(f"{module}_status") or "").lower()
+        if isinstance(exit_code, int) and exit_code != 0:
+            degraded.append(module)
+        elif status in bad_statuses:
+            degraded.append(module)
+    return degraded
+
+
+def run_stage(*args: object, **kwargs: object) -> subprocess.CompletedProcess:
+    kwargs.setdefault("timeout", STAGE_TIMEOUT_SECONDS)
+    environment = dict(kwargs.pop("env", os.environ))
+    if ACTIVE_CYCLE_ID:
+        environment["LIQUIDITY_CYCLE_ID"] = ACTIVE_CYCLE_ID
+    kwargs["env"] = environment
+    try:
+        return subprocess.run(*args, **kwargs)
+    except subprocess.TimeoutExpired as exc:
+        text_mode = kwargs.get("text") is True
+        stdout = exc.stdout or ("" if text_mode else b"")
+        stderr = exc.stderr or ("" if text_mode else b"")
+        timeout_message = f"stage timed out after {STAGE_TIMEOUT_SECONDS}s"
+        if text_mode:
+            stderr = f"{stderr}\n{timeout_message}".strip()
+        else:
+            stderr = bytes(stderr) + (b"\n" if stderr else b"") + timeout_message.encode()
+        return subprocess.CompletedProcess(exc.cmd, 124, stdout=stdout, stderr=stderr)
+
+
 def notify(message: str) -> None:
     script = f'display notification "{message}" with title "宏观流动性数据通道"'
-    subprocess.run(
+    run_stage(
         ["/usr/bin/osascript", "-e", script],
         check=False,
         stdout=subprocess.DEVNULL,
@@ -53,14 +119,27 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--minimum-free-gib", type=float, default=20.0)
     parser.add_argument("--hard-stop-free-gib", type=float, default=5.0)
+    parser.add_argument("--stage-timeout-seconds", type=int, default=1800)
     return parser.parse_args()
 
 
 def main() -> int:
+    global ACTIVE_CYCLE_ID, STAGE_TIMEOUT_SECONDS
     args = parse_args()
+    STAGE_TIMEOUT_SECONDS = max(30, int(args.stage_timeout_seconds))
+    STATUS_DIR.mkdir(parents=True, exist_ok=True)
+    lock_handle = (STATUS_DIR / "shadow-cycle.lock").open("a+")
+    try:
+        fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        print("another shadow cycle is already running", file=sys.stderr)
+        lock_handle.close()
+        return 6
     started_at = utc_now()
+    ACTIVE_CYCLE_ID = f"{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}-{uuid.uuid4().hex[:8]}"
     free_gib = shutil.disk_usage(ROOT).free / (1024**3)
     cycle: dict[str, object] = {
+        "cycle_id": ACTIVE_CYCLE_ID,
         "started_at": started_at,
         "completed_at": None,
         "free_gib_before": round(free_gib, 2),
@@ -91,7 +170,7 @@ def main() -> int:
         "deploy_exit_code": None,
         "status": "running",
     }
-    atomic_json(STATUS_DIR / "latest-shadow-cycle.json", cycle)
+    persist_cycle(cycle)
 
     if free_gib < args.hard_stop_free_gib:
         cycle.update(
@@ -101,12 +180,12 @@ def main() -> int:
                 "error": "free disk is below the hard-stop threshold",
             }
         )
-        atomic_json(STATUS_DIR / "latest-shadow-cycle.json", cycle)
+        persist_cycle(cycle)
         if args.notify:
             notify("磁盘空间低于硬门槛，今天的数据运行已阻止。")
         return 4
 
-    channel = subprocess.run(
+    channel = run_stage(
         [
             sys.executable,
             str(ROOT / "scripts" / "run_data_channel.py"),
@@ -117,7 +196,7 @@ def main() -> int:
     )
     cycle["channel_exit_code"] = channel.returncode
 
-    health = subprocess.run(
+    health = run_stage(
         [
             sys.executable,
             str(ROOT / "scripts" / "check_channel_health.py"),
@@ -149,7 +228,7 @@ def main() -> int:
             "analysis_allowed"
         )
 
-    stablecoins = subprocess.run(
+    stablecoins = run_stage(
         [
             sys.executable,
             str(ROOT / "scripts" / "run_stablecoin_channel.py"),
@@ -175,7 +254,7 @@ def main() -> int:
     if stablecoins.stderr.strip():
         cycle["stablecoin_stderr_tail"] = stablecoins.stderr[-2000:]
 
-    crypto_etf = subprocess.run(
+    crypto_etf = run_stage(
         [
             sys.executable,
             str(ROOT / "scripts" / "run_crypto_etf_channel.py"),
@@ -204,7 +283,7 @@ def main() -> int:
     if crypto_etf.stderr.strip():
         cycle["crypto_etf_stderr_tail"] = crypto_etf.stderr[-2000:]
 
-    crypto_derivatives = subprocess.run(
+    crypto_derivatives = run_stage(
         [
             sys.executable,
             str(ROOT / "scripts" / "run_crypto_derivatives_channel.py"),
@@ -234,7 +313,7 @@ def main() -> int:
     if crypto_derivatives.stderr.strip():
         cycle["crypto_derivatives_stderr_tail"] = crypto_derivatives.stderr[-2000:]
 
-    cross_asset = subprocess.run(
+    cross_asset = run_stage(
         [
             sys.executable,
             str(ROOT / "scripts" / "run_cross_asset_channel.py"),
@@ -264,7 +343,7 @@ def main() -> int:
     if cross_asset.stderr.strip():
         cycle["cross_asset_stderr_tail"] = cross_asset.stderr[-2000:]
 
-    yen_carry = subprocess.run(
+    yen_carry = run_stage(
         [
             sys.executable,
             str(ROOT / "scripts" / "run_yen_carry_channel.py"),
@@ -290,7 +369,7 @@ def main() -> int:
     if yen_carry.stderr.strip():
         cycle["yen_carry_stderr_tail"] = yen_carry.stderr[-2000:]
 
-    energy = subprocess.run(
+    energy = run_stage(
         [sys.executable, str(ROOT / "scripts" / "run_energy_channel.py"), "--direct"],
         cwd=ROOT,
         check=False,
@@ -309,7 +388,7 @@ def main() -> int:
     if energy.stderr.strip():
         cycle["energy_stderr_tail"] = energy.stderr[-2000:]
 
-    premium = subprocess.run(
+    premium = run_stage(
         [sys.executable, str(ROOT / "scripts" / "run_coinbase_premium.py"), "--direct"],
         cwd=ROOT, check=False, capture_output=True, text=True,
     )
@@ -321,7 +400,7 @@ def main() -> int:
     if premium.stderr.strip():
         cycle["coinbase_premium_stderr_tail"] = premium.stderr[-2000:]
 
-    expectations = subprocess.run(
+    expectations = run_stage(
         [sys.executable, str(ROOT / "scripts" / "run_market_expectations.py")],
         cwd=ROOT,
         check=False,
@@ -347,7 +426,7 @@ def main() -> int:
     if expectations.stderr.strip():
         cycle["expectations_stderr_tail"] = expectations.stderr[-2000:]
 
-    context = subprocess.run(
+    context = run_stage(
         [sys.executable, str(ROOT / "scripts" / "run_context_channel.py")],
         cwd=ROOT,
         check=False,
@@ -374,7 +453,7 @@ def main() -> int:
     if args.skip_agent:
         cycle["agent_status"] = "skipped_by_flag"
     elif channel.returncode == 0 and cycle.get("analysis_allowed") is True:
-        agent = subprocess.run(
+        agent = run_stage(
             [
                 sys.executable,
                 str(ROOT / "scripts" / "run_agent_analysis.py"),
@@ -403,7 +482,7 @@ def main() -> int:
     else:
         cycle["agent_status"] = "skipped_by_data_gate"
 
-    agent_health = subprocess.run(
+    agent_health = run_stage(
         [
             sys.executable,
             str(ROOT / "scripts" / "check_agent_health.py"),
@@ -434,8 +513,10 @@ def main() -> int:
     if agent_health.stderr.strip():
         cycle["agent_health_stderr"] = agent_health.stderr[-1000:]
 
+    optional_degraded = degraded_modules(cycle)
+    cycle["degraded_modules"] = optional_degraded
     if channel.returncode == 0:
-        cycle["status"] = "completed"
+        cycle["status"] = "completed_degraded" if optional_degraded else "completed"
     elif channel.returncode == 2:
         cycle["status"] = "completed_analysis_blocked"
         if args.notify:
@@ -446,7 +527,7 @@ def main() -> int:
             notify("今天的数据通道运行失败，请查看运行日志。")
     cycle["completed_at"] = utc_now()
     cycle["free_gib_after"] = round(shutil.disk_usage(ROOT).free / (1024**3), 2)
-    atomic_json(STATUS_DIR / "latest-shadow-cycle.json", cycle)
+    persist_cycle(cycle)
 
     deploy_failed = False
     deploy_config_path = ROOT / "config" / "production-deploy.json"
@@ -464,7 +545,7 @@ def main() -> int:
     elif not deploy_enabled:
         cycle["deploy_status"] = "not_configured"
     else:
-        deployment = subprocess.run(
+        deployment = run_stage(
             [sys.executable, str(ROOT / "scripts" / "deploy_public_dashboard.py")],
             cwd=ROOT,
             check=False,
@@ -490,7 +571,8 @@ def main() -> int:
             if args.notify:
                 notify("今天的数据已经更新，但公网看板发布失败，服务器仍保留上一版。")
 
-    atomic_json(STATUS_DIR / "latest-shadow-cycle.json", cycle)
+    cycle["completed_at"] = utc_now()
+    persist_cycle(cycle)
     if deploy_failed:
         return 5
     return 0 if channel.returncode in {0, 2} else channel.returncode

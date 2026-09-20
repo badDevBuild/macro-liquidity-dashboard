@@ -17,6 +17,10 @@ sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 
 from liquidity_dashboard.model import (  # noqa: E402
     _event_calendar_view,
+    _derived_spread_view,
+    _history_rows,
+    _runtime_freshness,
+    _runtime_refresh_optional_view,
     build_series,
     calculate_aligned_spread,
     calculate_change_contributions,
@@ -29,10 +33,129 @@ from liquidity_dashboard.agent_analysis import (  # noqa: E402
     validate_agent_payload,
 )
 from liquidity_dashboard.server import create_server  # noqa: E402
+from liquidity_dashboard.public_status import public_cycle_status  # noqa: E402
 from build_public_release import build_release  # noqa: E402
 
 
 class DashboardCalculationTests(unittest.TestCase):
+    def test_history_query_honors_publication_cutoff_for_same_day_revision(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            connection = sqlite3.connect(Path(temporary) / "history.sqlite3")
+            connection.row_factory = sqlite3.Row
+            connection.executescript("""
+                CREATE TABLE observations (
+                    metric_id TEXT, source_id TEXT, observed_at TEXT, value REAL,
+                    unit TEXT, first_seen_at TEXT, last_seen_at TEXT,
+                    revision_count INTEGER
+                );
+                CREATE TABLE observation_versions (
+                    run_id TEXT, metric_id TEXT, source_id TEXT, observed_at TEXT,
+                    value REAL, unit TEXT, recorded_at TEXT, raw_sha256 TEXT
+                );
+            """)
+            connection.execute(
+                "INSERT INTO observations VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                ("m", "s", "2026-08-28", 90, "x", "2026-08-28T07:00:00Z", "2026-08-28T09:00:00Z", 1),
+            )
+            connection.executemany(
+                "INSERT INTO observation_versions VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                [
+                    ("run-1", "m", "s", "2026-08-28", 100, "x", "2026-08-28T07:00:00Z", "a"),
+                    ("run-2", "m", "s", "2026-08-28", 90, "x", "2026-08-28T09:00:00Z", "b"),
+                ],
+            )
+            connection.commit()
+            rows = _history_rows(
+                connection,
+                "m",
+                "s",
+                published_at="2026-08-28T08:00:00Z",
+            )
+            connection.close()
+        self.assertEqual(rows[0]["value"], 100)
+
+    def test_derived_spread_inherits_unavailable_component(self) -> None:
+        spread = _derived_spread_view(
+            "spread_test",
+            "A − B",
+            "a",
+            "b",
+            [{"observed_at": "2026-08-28", "value": 4.0}],
+            [{"observed_at": "2026-08-28", "value": 3.0}],
+            {
+                "a": {"available_for_analysis": True, "quality_status": "fresh_network"},
+                "b": {"available_for_analysis": False, "quality_status": "stale_runtime"},
+            },
+            streak_condition="positive",
+        )
+        self.assertEqual(spread["value"], 100.0)
+        self.assertFalse(spread["available_for_analysis"])
+        self.assertEqual(spread["quality_status"], "unavailable")
+
+    def test_public_cycle_status_drops_paths_logs_and_error_details(self) -> None:
+        public = public_cycle_status({
+            "status": "completed_deploy_failed",
+            "run_id": "run-1",
+            "started_at": "2026-08-28T00:00:00Z",
+            "completed_at": "2026-08-28T00:05:00Z",
+            "agent_status": "ready",
+            "agent_run_dir": "/Users/private/data/analysis",
+            "agent_stderr_tail": "token=secret stack trace",
+            "deployment_error": "ssh failed for private-host",
+        })
+        serialized = json.dumps(public)
+        self.assertNotIn("/Users/", serialized)
+        self.assertNotIn("secret", serialized)
+        self.assertNotIn("private-host", serialized)
+        self.assertEqual(public["error_code"], "completed_deploy_failed")
+
+    def test_public_cycle_status_treats_optional_degradation_as_completed(self) -> None:
+        public = public_cycle_status({
+            "status": "completed_degraded",
+            "cycle_id": "cycle-1",
+            "energy_status": "unavailable",
+        })
+
+        self.assertTrue(public["success"])
+        self.assertIsNone(public["error_code"])
+        self.assertEqual(public["modules"]["energy"], "unavailable")
+
+    def test_runtime_freshness_expires_without_rewriting_publication_fact(self) -> None:
+        result = _runtime_freshness(
+            {
+                "observed_at": "2026-08-01",
+                "quality_status": "fresh_network",
+                "available_for_analysis": True,
+            },
+            {"freshness_max_days": 5},
+            now=datetime(2026, 8, 10, 7, 30, tzinfo=timezone.utc),
+        )
+        self.assertEqual(result["publication_quality_status"], "fresh_network")
+        self.assertTrue(result["publication_available_for_analysis"])
+        self.assertEqual(result["runtime_freshness_status"], "stale")
+        self.assertEqual(result["quality_status"], "stale_runtime")
+        self.assertFalse(result["available_for_analysis"])
+
+    def test_optional_daily_metric_also_expires_at_read_time(self) -> None:
+        view = _runtime_refresh_optional_view(
+            {
+                "available_for_analysis": True,
+                "quality_status": "fresh_network",
+                "metrics": {
+                    "example": {
+                        "observed_at": "2026-08-01",
+                        "cadence": "business_daily",
+                        "quality_status": "fresh_network",
+                        "available_for_analysis": True,
+                        "value": 1,
+                    }
+                },
+            },
+            now=datetime(2026, 8, 10, 7, 30, tzinfo=timezone.utc),
+        )
+        self.assertFalse(view["available_for_analysis"])
+        self.assertFalse(view["metrics"]["example"]["available_for_analysis"])
+
     def test_event_calendar_exposes_next_event_and_cache_state(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -163,8 +286,10 @@ class AgentAnalysisTests(unittest.TestCase):
             "tga_daily": {
                 "metric_id": "tga_daily",
                 "observed_at": "2026-08-26",
-                "value": 959_435,
-                "changes": {"1w": {"change": 23_029}},
+            "value": 959_435,
+            "changes": {"1w": {"change": 23_029}},
+            "available_for_analysis": True,
+            "quality_status": "fresh_network",
             }
         }
         self.proxy = {
@@ -175,12 +300,15 @@ class AgentAnalysisTests(unittest.TestCase):
             "trend_latest_value": 5_779_474,
             "trend_latest_observed_at": "2026-08-26",
             "trend_changes": {"1m": {"change": -137_905}},
+            "available_for_analysis": True,
+            "quality_status": "fresh_network",
+            "methodology_version": "daily-tga-v1",
         }
 
     def artifact(self) -> dict:
         return {
             "schema_version": "1.5",
-            "prompt_version": "macro-liquidity-morning-v9",
+            "prompt_version": "macro-liquidity-morning-v10",
             "analysis_id": "analysis-1",
             "snapshot_run_id": "run-1",
             "context_bundle_id": "context-unavailable",
@@ -370,6 +498,20 @@ class AgentAnalysisTests(unittest.TestCase):
         self.assertEqual(result["state"], "invalid")
         self.assertFalse(result["is_current"])
 
+    def test_metric_without_explicit_analysis_eligibility_fails_closed(self) -> None:
+        metrics = json.loads(json.dumps(self.metrics))
+        metrics["tga_daily"].pop("available_for_analysis")
+        errors = validate_agent_payload(
+            self.artifact(),
+            metrics,
+            self.proxy,
+            {},
+        )
+        self.assertIn(
+            "drivers contains evidence that does not match the snapshot",
+            errors,
+        )
+
     def test_background_analysis_allows_explicit_mixed_date_caveat(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -546,12 +688,15 @@ class DashboardSeriesTests(unittest.TestCase):
             root = Path(temporary)
             (root / "data" / "snapshots").mkdir(parents=True)
             snapshot = {
+                "run_id": "run-1",
+                "completed_at": "2026-08-02T00:00:00Z",
                 "metrics": {
                     "fed_total_assets": {
                         "source_id": "primary",
                         "source_name": "Primary source",
                         "source_url": "https://example.com/primary",
                         "unit": "usd_millions",
+                        "observed_at": "2026-08-01",
                     }
                 }
             }
@@ -696,6 +841,14 @@ class DashboardSeriesTests(unittest.TestCase):
 
 
 class FrontendDeploymentTests(unittest.TestCase):
+    def test_shadow_cycle_has_process_lock_timeout_and_cycle_scoped_status(self) -> None:
+        runner = (PROJECT_ROOT / "scripts" / "run_shadow_cycle.py").read_text(encoding="utf-8")
+        self.assertIn("fcntl.LOCK_EX | fcntl.LOCK_NB", runner)
+        self.assertIn("--stage-timeout-seconds", runner)
+        self.assertIn("subprocess.TimeoutExpired", runner)
+        self.assertIn('STATUS_DIR / "cycles" / f"{cycle_id}.json"', runner)
+        self.assertIn('environment["LIQUIDITY_CYCLE_ID"]', runner)
+
     def test_frontend_theme_switch_follows_system_and_persists_user_choice(self) -> None:
         index = (PROJECT_ROOT / "web" / "index.html").read_text(encoding="utf-8")
         app = (PROJECT_ROOT / "web" / "assets" / "app.js").read_text(
@@ -715,11 +868,25 @@ class FrontendDeploymentTests(unittest.TestCase):
         self.assertIn('localStorage.setItem(THEME_KEY, nextTheme)', app)
         self.assertIn('setAttribute("aria-pressed"', app)
         self.assertIn('html[data-theme="dark"]', styles)
-        self.assertIn('assets/app.css?v=41', index)
-        self.assertIn('assets/app.js?v=41', index)
-        self.assertIn('assets/coinbase-premium.js?v=41', index)
-        self.assertIn('assets/coinbase-premium.js?v=41', service_worker)
-        self.assertIn('macro-liquidity-shell-v41', service_worker)
+        self.assertIn('assets/app.css?v=43', index)
+        self.assertIn('assets/app.js?v=43', index)
+        self.assertIn('assets/coinbase-premium.js?v=43', index)
+        self.assertIn('assets/coinbase-premium.js?v=43', service_worker)
+        self.assertIn('`${CACHE_PREFIX}shell-v43`', service_worker)
+        self.assertIn('`${CACHE_PREFIX}data-v3`', service_worker)
+        self.assertIn('key.startsWith(CACHE_PREFIX)', service_worker)
+        self.assertNotIn('.filter((key) => ![SHELL_CACHE, DATA_CACHE].includes(key))', service_worker)
+
+    def test_frontend_series_requests_are_release_bound_and_race_safe(self) -> None:
+        app = (PROJECT_ROOT / "web" / "assets" / "app.js").read_text(encoding="utf-8")
+        self.assertIn("seriesRequests: new WeakMap()", app)
+        self.assertIn("previous.controller.abort()", app)
+        self.assertIn("payload.release_id !== releaseId", app)
+        self.assertIn("`${releaseId}:${metricId}:${rangeId}`", app)
+        self.assertIn("minimumIndex", app)
+        self.assertIn("maximumIndex", app)
+        self.assertIn("_segmentStart", app)
+        self.assertIn("chartDataTable(tablePoints, metric, rangeId)", app)
 
     def test_derivatives_separates_price_change_from_funding_rate(self) -> None:
         app = (PROJECT_ROOT / "web" / "assets" / "app.js").read_text(
@@ -775,9 +942,21 @@ class FrontendDeploymentTests(unittest.TestCase):
 
         self.assertIn("SOAK_STATUS_LABELS", app)
         self.assertIn("soakStatusClass", app)
-        self.assertIn("本次数据", app)
+        self.assertIn("当前数据", app)
         self.assertIn("稳定性观察", app)
         self.assertIn("status-observing", styles)
+
+    def test_frontend_uses_runtime_data_status_not_only_publication_status(self) -> None:
+        app = (PROJECT_ROOT / "web" / "assets" / "app.js").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("function effectiveDataStatus(status)", app)
+        self.assertIn('stale: "数据已过期"', app)
+        self.assertIn("const currentStatusCode = effectiveDataStatus(data.status)", app)
+        self.assertIn("当前数据已经过期", app)
+        self.assertIn("status.service_status?.code", app)
+        self.assertIn("status.update_status?.code", app)
 
     def test_mobile_overview_places_real_trend_before_component_evidence(self) -> None:
         app = (PROJECT_ROOT / "web" / "assets" / "app.js").read_text(
@@ -909,6 +1088,9 @@ class FrontendDeploymentTests(unittest.TestCase):
                 self.assertIn("data/cross-asset/history.json", paths)
             self.assertNotIn("config/production-deploy.json", paths)
             self.assertNotIn("config/production-known-hosts", paths)
+            self.assertNotIn("data/status/latest-agent-run.json", paths)
+            self.assertNotIn("data/status/latest-run.json", paths)
+            self.assertNotIn("data/status/latest-public-deploy.json", paths)
             self.assertFalse(any(path.startswith("data/raw/") for path in paths))
             self.assertFalse(any("__pycache__" in path for path in paths))
             self.assertFalse(any(path.endswith(("-wal", "-shm")) for path in paths))
@@ -957,6 +1139,11 @@ class DashboardServerTests(unittest.TestCase):
                 self.assertEqual(response.status, 404)
                 self.assertNotIn(b"secret", body)
                 self.assertEqual(response.getheader("X-Content-Type-Options"), "nosniff")
+
+                connection.request("GET", "/missing-static-file.js")
+                missing = connection.getresponse()
+                missing.read()
+                self.assertEqual(missing.status, 404)
                 self.assertIn("frame-ancestors 'none'", response.getheader("Content-Security-Policy"))
             finally:
                 server.shutdown()

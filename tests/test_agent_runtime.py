@@ -13,6 +13,7 @@ sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from liquidity_dashboard.agent_runtime import (  # noqa: E402
     _analysis_delta,
+    _metric_update,
     _codex_subprocess_environment,
     _repair_diagnostics,
     build_agent_prompt,
@@ -238,7 +239,7 @@ class AgentRuntimeTests(unittest.TestCase):
         self.assertEqual(calls, 1)
         self.assertEqual(result["state"], "shadow_ready")
         self.assertEqual(shadow["snapshot_run_id"], "run-1")
-        self.assertEqual(shadow["prompt_version"], "macro-liquidity-morning-v9")
+        self.assertEqual(shadow["prompt_version"], "macro-liquidity-morning-v10")
         self.assertEqual(shadow["context_bundle_id"], "context-unavailable")
         self.assertEqual(shadow["model"]["id"], "gpt-5.6-sol")
         self.assertEqual(shadow["model"]["reasoning_effort"], "medium")
@@ -368,6 +369,7 @@ class AgentRuntimeTests(unittest.TestCase):
                     "observed_at": "2026-09-04T07:30:00Z",
                     "value": 5.1652,
                     "change": 5.4225,
+                    "comparison_status": "comparable",
                 }
             ],
         }
@@ -830,6 +832,68 @@ class AgentRuntimeTests(unittest.TestCase):
         update = delta["market_expectation_updates"][0]
         self.assertTrue(update["event_changed"])
         self.assertEqual(update["comparison_status"], "new_event_not_comparable")
+        self.assertIsNone(update["probability_change_percentage_points"])
+
+    def test_metric_method_or_coverage_change_is_not_an_economic_change(self) -> None:
+        previous = {
+            "value": 200.0,
+            "observed_at": "2026-08-27",
+            "unit": "usd_millions",
+            "source_id": "official_perpetuals",
+            "metadata": {
+                "coverage_key": "binance+bybit+okx",
+                "methodology_version": "double_sided_v1",
+            },
+        }
+        current = {
+            "value": 100.0,
+            "observed_at": "2026-08-28",
+            "unit": "usd_millions",
+            "source_id": "official_perpetuals",
+            "metadata": {
+                "coverage_key": "binance+bybit+okx",
+                "methodology_version": "single_sided_v2",
+            },
+        }
+        update = _metric_update("derivatives_btc_open_interest", current, previous)
+        self.assertEqual(update["comparison_status"], "not_comparable")
+        self.assertIn("methodology_version", update["comparison_mismatches"])
+        self.assertIsNone(update["change"])
+
+    def test_top_outcome_switch_within_same_event_is_not_compared(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            run_dir = root / "data" / "analysis" / "runs" / "run-0" / "analysis-0"
+            run_dir.mkdir(parents=True)
+            previous_context = {
+                "snapshot_run_id": "run-0",
+                "snapshot_completed_at": "2026-08-27T06:30:00Z",
+                "metrics": {},
+                "market_expectations": {"topics": [{
+                    "topic_id": "fed_cut_distribution",
+                    "event_id": "2026-event",
+                    "updated_at": "2026-08-27T05:00:00Z",
+                    "top_outcome": {"outcome_id": "cuts-1", "probability": 0.55},
+                }]},
+                "data_quality": {"unavailable": []},
+            }
+            (run_dir / "context.json").write_text(json.dumps(previous_context), encoding="utf-8")
+            (run_dir / "validated.json").write_text(json.dumps({"analysis_id": "analysis-0"}), encoding="utf-8")
+            current_context = {
+                "snapshot_run_id": "run-1",
+                "metrics": {},
+                "market_expectations": {"topics": [{
+                    "topic_id": "fed_cut_distribution",
+                    "event_id": "2026-event",
+                    "updated_at": "2026-08-28T05:00:00Z",
+                    "top_outcome": {"outcome_id": "cuts-2", "probability": 0.50},
+                }]},
+                "data_quality": {"unavailable": []},
+                "reconciliation_issues": [],
+            }
+            update = _analysis_delta(root, current_context)["market_expectation_updates"][0]
+        self.assertTrue(update["outcome_changed"])
+        self.assertEqual(update["comparison_status"], "top_outcome_changed_not_comparable")
         self.assertIsNone(update["probability_change_percentage_points"])
 
 
