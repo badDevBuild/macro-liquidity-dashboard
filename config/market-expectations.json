@@ -12,6 +12,59 @@
     "timeout_seconds": 25,
     "max_results_per_type": 10
   },
+  "featured_markets": {
+    "label": "高成交宏观盘口",
+    "max_items": 5,
+    "max_items_per_query": 2,
+    "max_results_per_query": 12,
+    "minimum_liquidity_usd": 5000,
+    "minimum_volume_24h_usd": 500,
+    "maximum_age_hours": 36,
+    "queries": [
+      {
+        "query": "Fed decision",
+        "label": "下一次美联储议息决定",
+        "display_label": "下一次美联储议息决定",
+        "topic_kind": "fed_decision",
+        "title_pattern": "^Fed Decision in [A-Za-z]+\\?$"
+      },
+      {
+        "query": "Treasury yield",
+        "label": "美债收益率区间预期",
+        "display_label": "美债收益率区间预期",
+        "topic_kind": "treasury_yield",
+        "title_pattern": "^How (high|low) will (5|10|30)-year Treasury yield"
+      },
+      {
+        "query": "US government shutdown",
+        "label": "停摆与众议院选举组合盘口",
+        "display_label": "停摆与众议院选举组合盘口",
+        "topic_kind": "government_shutdown",
+        "title_pattern": "US government shutdown"
+      },
+      {
+        "query": "US unemployment",
+        "label": "美国就业与失业率预期",
+        "display_label": "美国就业与失业率预期",
+        "topic_kind": "us_unemployment",
+        "title_pattern": "(US unemployment|US economic state)"
+      },
+      {
+        "query": "US GDP",
+        "label": "美国 GDP 增速预期",
+        "display_label": "美国 GDP 增速预期",
+        "topic_kind": "us_gdp",
+        "title_pattern": "US GDP growth"
+      },
+      {
+        "query": "US tariffs",
+        "label": "美国关税政策预期",
+        "display_label": "美国关税政策预期",
+        "topic_kind": "us_tariffs",
+        "title_pattern": "(tariff|tariffs)"
+      }
+    ]
+  },
   "topics": [
     {
       "topic_id": "fed_policy_distribution",

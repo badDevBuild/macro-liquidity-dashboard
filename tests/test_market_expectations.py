@@ -14,6 +14,7 @@ from liquidity_dashboard.market_expectations import (  # noqa: E402
     _update_history,
     normalize_event,
     select_event,
+    select_featured_events,
 )
 
 
@@ -83,6 +84,81 @@ class MarketExpectationsTests(unittest.TestCase):
             now=datetime(2026, 8, 29, tzinfo=timezone.utc),
         )
         self.assertEqual(selected["id"], "51456")
+
+    def test_normalize_event_hides_expired_child_markets(self) -> None:
+        event = json.loads(json.dumps(self.event))
+        event["markets"][0]["endDate"] = "2026-08-28T00:00:00Z"
+        event["markets"][1]["endDate"] = "2026-12-31T00:00:00Z"
+        result = normalize_event(
+            event,
+            self.topic,
+            now=datetime(2026, 8, 29, 12, tzinfo=timezone.utc),
+        )
+        self.assertEqual([item["market_id"] for item in result["outcomes"]], ["m1"])
+
+    def test_normalize_event_rejects_an_expired_event_even_if_active(self) -> None:
+        expired = {**self.event, "endDate": "2026-08-28T00:00:00Z"}
+        with self.assertRaisesRegex(Exception, "closed or expired"):
+            normalize_event(
+                expired,
+                self.topic,
+                now=datetime(2026, 8, 29, 12, tzinfo=timezone.utc),
+            )
+
+    def test_featured_markets_rank_by_volume_and_limit_each_query(self) -> None:
+        def event(event_id: str, volume: float, end_date: str = "2026-12-31T00:00:00Z") -> dict:
+            return {
+                **self.event,
+                "id": event_id,
+                "title": f"Macro event {event_id}",
+                "endDate": end_date,
+                "volume24hr": volume,
+                "liquidity": 20_000,
+            }
+
+        query_a = {"query": "a", "title_pattern": "Macro event"}
+        query_b = {"query": "b", "title_pattern": "Macro event"}
+        selected = select_featured_events(
+            [
+                (query_a, {"events": [event("a1", 9000), event("a2", 8000)]}),
+                (
+                    query_b,
+                    {"events": [event("expired", 99_000, "2026-08-28T00:00:00Z"), event("b1", 7000)]},
+                ),
+            ],
+            {
+                "max_items": 3,
+                "max_items_per_query": 1,
+                "minimum_liquidity_usd": 5000,
+                "minimum_volume_24h_usd": 500,
+            },
+            excluded_event_ids=set(),
+            now=datetime(2026, 8, 29, 12, tzinfo=timezone.utc),
+        )
+        self.assertEqual([item[1]["id"] for item in selected], ["a1", "b1"])
+
+    def test_nonexclusive_featured_event_keeps_multiple_markets_without_summing(self) -> None:
+        event = json.loads(json.dumps(self.event))
+        event["negRisk"] = False
+        event["markets"][0]["outcomePrices"] = '["0.3", "0.7"]'
+        event["markets"][1]["outcomePrices"] = '["0.7", "0.3"]'
+        topic = {
+            "topic_id": "featured_polymarket_example",
+            "label": "美债区间",
+            "presentation": "multi_market",
+            "selection_role": "featured",
+            "minimum_liquidity_usd": 0,
+            "minimum_volume_24h_usd": 0,
+        }
+        result = normalize_event(
+            event,
+            topic,
+            now=datetime(2026, 8, 29, 12, tzinfo=timezone.utc),
+        )
+        self.assertEqual(result["presentation"], "multi_market")
+        self.assertEqual(len(result["outcomes"]), 2)
+        self.assertEqual(result["top_outcome"]["market_id"], "m1")
+        self.assertIsNone(result["probability_sum"])
 
     def test_select_event_locks_policy_market_to_current_year(self) -> None:
         next_year = {

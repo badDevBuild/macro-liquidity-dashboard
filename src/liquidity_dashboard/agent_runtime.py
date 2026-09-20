@@ -513,6 +513,7 @@ def build_agent_context(root: Path) -> tuple[dict[str, Any], dict[str, Any]]:
         "status": expectations_source.get("status"),
         "generated_at": expectations_source.get("generated_at"),
         "methodology": expectations_source.get("methodology", {}),
+        "featured_selection": expectations_source.get("featured_selection", {}),
         "cme_fedwatch": expectations_source.get("cme_fedwatch", {}),
         "topics": [
             {
@@ -520,6 +521,10 @@ def build_agent_context(root: Path) -> tuple[dict[str, Any], dict[str, Any]]:
                     "topic_id",
                     "label",
                     "display_label",
+                    "selection_role",
+                    "selection_rank",
+                    "selection_reason",
+                    "topic_kind",
                     "presentation",
                     "policy_action",
                     "state",
@@ -895,6 +900,7 @@ def build_agent_context(root: Path) -> tuple[dict[str, Any], dict[str, Any]]:
             "SOFR−IORB 单日转正不等于准备金短缺；必须同时看持续时间、SOFR−EFFR 和日历效应。",
             "只有美债期限差小于零才称为收益率曲线倒挂；短端资金利差只称转正或扩大。",
             "Polymarket 是市场隐含概率，不是官方事实；必须结合流动性和成交量判断证据强弱。",
+            "Polymarket 的高成交宏观盘口只包含未到期事件，按 24 小时成交额和流动性排序；入选不等于结论更可靠。",
             "Polymarket 年度降息次数与年度加息次数都是累计次数，两组盘口可能同时非零，不能互减、互补或改写成年末净利率路径。",
             "Polymarket 互斥分布保留原始盘口合计和相对 100% 的差值；不得把未归一化价格静默改成概率分布。",
             "Polymarket analysis_eligible=false、freshness_status=stale/unknown 或 quality=thin 时，只能降权或列入未知，不能作为当前主要依据。",

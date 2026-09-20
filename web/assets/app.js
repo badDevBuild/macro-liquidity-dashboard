@@ -1243,20 +1243,28 @@ function treasuryCurvePanel(data) {
 
 function marketExpectationsPanel(data) {
   const expectations = data.market_expectations || {};
-  const topicRows = (expectations.topics || []).map((topic) => {
-    if (topic.state !== "ready") {
-      return `<div class="expectation-row expectation-unavailable"><strong>${escapeHTML(topic.label || "市场")}</strong><span>暂时没有拿到数据</span></div>`;
-    }
+  let featuredHeadingAdded = false;
+  const topicRows = (expectations.topics || []).filter((topic) => topic.state === "ready").map((topic) => {
+    const featured = topic.selection_role === "featured";
+    const sectionLead = featured && !featuredHeadingAdded
+      ? `<div class="expectation-group-label"><strong>高成交宏观盘口</strong><span>仅展示未到期市场，按 24 小时成交额排序</span></div>`
+      : "";
+    if (featured) featuredHeadingAdded = true;
     const allOutcomes = topic.outcomes || [];
     const visibleCount = topic.presentation === "binary" ? 1 : 3;
     const outcomes = allOutcomes.slice(0, visibleCount);
     const extraOutcomes = topic.policy_action ? allOutcomes.slice(visibleCount) : [];
     const topOutcome = topic.top_outcome || outcomes[0] || {};
     const topLabel = topOutcome.display_label || topOutcome.label || "暂无结果";
-    const summaryLead = topic.topic_id === "us_recession_probability" ? `“${topLabel}”的市场概率` : `最可能：${topLabel}`;
+    const summaryLead = topic.presentation === "multi_market"
+      ? `关注盘口：${topLabel}`
+      : topic.topic_id === "us_recession_probability"
+        ? `“${topLabel}”的市场概率`
+        : `最可能：${topLabel}`;
     const dailySummary = numericOrNull(topOutcome.change_1d) === null
       ? "当日暂无可比数据"
       : `当日 ${formatProbabilityChange(topOutcome.change_1d)}`;
+    const activitySummary = featured ? ` · 24 小时成交 ${formatUsd(topic.volume_24h_usd)}` : "";
     const probabilityBar = (outcome) => `
       <div class="probability-row">
         <div><span>${escapeHTML(outcome.display_label || outcome.label)}</span><strong>${escapeHTML(`${roundForDisplay(Number(outcome.probability) * 100, 1)}%`)}</strong></div>
@@ -1281,9 +1289,9 @@ function marketExpectationsPanel(data) {
     const policyRule = topic.policy_action
       ? `<p class="policy-count-rule">这是全年累计次数盘口。降息和加息两组可能同时非零，不能相减成净政策路径。</p>`
       : "";
-    return `
+    return `${sectionLead}
       <details class="expectation-row" ${topic.topic_id === "fed_policy_distribution" ? "open" : ""}>
-        <summary><span><strong>${escapeHTML(topic.display_label || topic.label)}</strong><small>${escapeHTML(`${summaryLead} · ${dailySummary}`)}</small></span><span>${escapeHTML(`${roundForDisplay(Number(topOutcome.probability || 0) * 100, 1)}%`)}</span></summary>
+        <summary><span><strong>${escapeHTML(topic.display_label || topic.label)}</strong><small>${escapeHTML(`${summaryLead} · ${dailySummary}${activitySummary}`)}</small></span><span>${escapeHTML(`${roundForDisplay(Number(topOutcome.probability || 0) * 100, 1)}%`)}</span></summary>
         <div class="expectation-detail">
           ${bars}
           ${extraBars}
@@ -1293,6 +1301,7 @@ function marketExpectationsPanel(data) {
             <dt>数据更新</dt><dd>${escapeHTML(formatDateTime(topic.updated_at))}</dd>
             <dt>24 小时成交</dt><dd>${escapeHTML(formatUsd(topic.volume_24h_usd))}</dd>
             <dt>可用流动性</dt><dd>${escapeHTML(formatUsd(topic.liquidity_usd))}</dd>
+            ${featured ? `<dt>为什么展示</dt><dd>${escapeHTML(topic.selection_reason || "在未到期的宏观候选中，24 小时成交较活跃。")}</dd>` : ""}
             ${sumDetail}
           </dl>
           <p>${escapeHTML(freshness)}。概率是市场价格隐含的押注，不是官方预测。</p>
@@ -1305,7 +1314,7 @@ function marketExpectationsPanel(data) {
   return `
     <div class="special-analysis expectations-analysis">
       <div class="analysis-status-row"><div><p class="eyebrow">市场预期</p><h3>真钱押注在预期什么，而不是结果一定会发生什么</h3></div><span class="analysis-state state-${escapeHTML(expectations.status || "unavailable")}">${expectations.status === "ready" ? "已更新" : expectations.status === "degraded" ? "部分可用" : "暂不可用"}</span></div>
-      <div class="expectation-list">${topicRows}</div>
+      <div class="expectation-list">${topicRows || `<div class="notice"><strong>当前没有可展示的未到期市场</strong><span>已到期、已关闭或数据过旧的盘口不会出现在这里。</span></div>`}</div>
       <details class="cme-status"><summary><strong>${escapeHTML(cme.label || "CME 利率押注")}</strong><span>等待官方数据权限</span></summary><p>${escapeHTML(cme.message || "当前没有结构化数据。")}</p><a class="inline-link" href="${escapeHTML(safeUrl(cme.source_url))}" target="_blank" rel="noreferrer">查看官方页面 <span aria-hidden="true">↗</span></a></details>
       <p class="reading-rule">Polymarket 是预测市场，不是官方数据。页面保留原始盘口，不把加息和降息次数互减成净利率路径。</p>
     </div>`;

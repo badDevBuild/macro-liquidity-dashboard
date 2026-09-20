@@ -115,6 +115,22 @@ def _future(value: Any, now: datetime) -> bool:
     return moment.astimezone(UTC) >= now.astimezone(UTC)
 
 
+def _open_event(event: dict[str, Any], now: datetime) -> bool:
+    return (
+        event.get("active") is True
+        and event.get("closed") is not True
+        and event.get("archived") is not True
+        and _future(event.get("endDate"), now)
+    )
+
+
+def _open_market(market: dict[str, Any], now: datetime) -> bool:
+    if market.get("active") is not True or market.get("closed") is True:
+        return False
+    end_date = market.get("endDate")
+    return end_date in {None, ""} or _future(end_date, now)
+
+
 def _event_year(event: dict[str, Any]) -> int | None:
     match = re.search(r"\b(20\d{2})\b", str(event.get("title") or ""))
     return int(match.group(1)) if match else None
@@ -154,9 +170,7 @@ def select_event(
     for event in payload.get("events", []):
         if not isinstance(event, dict):
             continue
-        if event.get("active") is not True or event.get("closed") is True:
-            continue
-        if event.get("archived") is True or not _future(event.get("endDate"), now):
+        if not _open_event(event, now):
             continue
         if not pattern.search(str(event.get("title") or "")):
             continue
@@ -168,6 +182,66 @@ def select_event(
         volume_24h = _number(event.get("volume24hr")) or 0.0
         candidates.append((volume_24h, liquidity, event))
     return max(candidates, default=(0.0, 0.0, None), key=lambda item: item[:2])[2]
+
+
+def select_featured_events(
+    search_results: list[tuple[dict[str, Any], dict[str, Any]]],
+    config: dict[str, Any],
+    *,
+    excluded_event_ids: set[str],
+    now: datetime,
+) -> list[tuple[dict[str, Any], dict[str, Any]]]:
+    """Choose liquid, still-open macro events while preserving some topic diversity."""
+    minimum_liquidity = float(config.get("minimum_liquidity_usd", 0))
+    minimum_volume = float(config.get("minimum_volume_24h_usd", 0))
+    per_query_limit = max(1, int(config.get("max_items_per_query", 2)))
+    maximum_items = max(0, int(config.get("max_items", 5)))
+    selected_by_id: dict[str, tuple[dict[str, Any], dict[str, Any]]] = {}
+    for query_spec, payload in search_results:
+        pattern = re.compile(
+            str(query_spec.get("title_pattern") or ".*"), re.IGNORECASE
+        )
+        query_candidates: list[dict[str, Any]] = []
+        for event in payload.get("events", []):
+            if not isinstance(event, dict) or not _open_event(event, now):
+                continue
+            event_id = str(event.get("id") or "")
+            if not event_id or event_id in excluded_event_ids:
+                continue
+            if not pattern.search(str(event.get("title") or "")):
+                continue
+            liquidity = _number(event.get("liquidity")) or 0.0
+            volume_24h = _number(event.get("volume24hr")) or 0.0
+            if liquidity < minimum_liquidity or volume_24h < minimum_volume:
+                continue
+            query_candidates.append(event)
+        query_candidates.sort(
+            key=lambda item: (
+                _number(item.get("volume24hr")) or 0.0,
+                _number(item.get("liquidity")) or 0.0,
+            ),
+            reverse=True,
+        )
+        for event in query_candidates[:per_query_limit]:
+            event_id = str(event.get("id"))
+            incumbent = selected_by_id.get(event_id)
+            if incumbent is None or (
+                (_number(event.get("volume24hr")) or 0.0),
+                (_number(event.get("liquidity")) or 0.0),
+            ) > (
+                (_number(incumbent[1].get("volume24hr")) or 0.0),
+                (_number(incumbent[1].get("liquidity")) or 0.0),
+            ):
+                selected_by_id[event_id] = (query_spec, event)
+    ranked = sorted(
+        selected_by_id.values(),
+        key=lambda item: (
+            _number(item[1].get("volume24hr")) or 0.0,
+            _number(item[1].get("liquidity")) or 0.0,
+        ),
+        reverse=True,
+    )
+    return ranked[:maximum_items]
 
 
 def _display_outcome(
@@ -183,6 +257,29 @@ def _display_outcome(
         return f"同比 {label}"
     if topic_id == "us_recession_probability":
         return "会发生"
+    if topic.get("topic_kind") == "fed_decision":
+        lowered = label.lower()
+        match = re.search(r"(\d+)\+?\s*bps", lowered)
+        basis_points = match.group(1) if match else ""
+        if "no change" in lowered:
+            return "维持不变"
+        if "decrease" in lowered:
+            return f"降息 {basis_points} 个基点{'以上' if '+' in label else ''}"
+        if "increase" in lowered:
+            return f"加息 {basis_points} 个基点{'以上' if '+' in label else ''}"
+    if topic.get("topic_kind") == "government_shutdown":
+        translated = label.replace("No shutdown", "不发生停摆").replace(
+            "Shutdown", "发生停摆"
+        )
+        translated = translated.replace("Democratic Party", "民主党赢得众议院")
+        translated = translated.replace("Republican Party", "共和党赢得众议院")
+        return translated.replace(" & ", "，")
+    below = re.match(r"Below\s+(.+)", label, re.IGNORECASE)
+    if below:
+        return f"低于 {below.group(1)}"
+    above = re.match(r"Above\s+(.+)", label, re.IGNORECASE)
+    if above:
+        return f"高于 {above.group(1)}"
     return label
 
 
@@ -192,6 +289,24 @@ def _display_topic(event: dict[str, Any], topic: dict[str, Any]) -> str:
     year = year_match.group(1) if year_match else ""
     topic_id = topic.get("topic_id")
     action = str(topic.get("policy_action") or "")
+    topic_kind = str(topic.get("topic_kind") or "")
+    if topic_kind == "fed_decision":
+        month_match = re.search(r"in\s+([A-Za-z]+)", title, re.IGNORECASE)
+        month = MONTH_LABELS.get(
+            month_match.group(1).lower() if month_match else "", "下一次"
+        )
+        return f"{month}美联储议息决定"
+    if topic_kind == "treasury_yield":
+        match = re.search(
+            r"How\s+(high|low)\s+will\s+(5|10|30)-year Treasury yield",
+            title,
+            re.IGNORECASE,
+        )
+        if match:
+            direction = "高点" if match.group(1).lower() == "high" else "低点"
+            return f"{match.group(2)} 年期美债收益率{direction}"
+    if topic.get("display_label"):
+        return str(topic["display_label"])
     if action in {"cut", "hike"}:
         action_label = "降息" if action == "cut" else "加息"
         return f"{year} 年全年美联储{action_label}次数" if year else f"全年美联储{action_label}次数"
@@ -255,13 +370,15 @@ def normalize_event(
     current = now or datetime.now(tz=UTC)
     if current.tzinfo is None:
         current = current.replace(tzinfo=UTC)
+    if not _open_event(event, current):
+        raise ExpectationsError("selected event is closed or expired")
     if topic.get("require_neg_risk") is True and not _is_neg_risk_event(event):
         raise ExpectationsError("selected distribution is not a neg-risk event")
     outcomes = []
     for market in event.get("markets", []):
         if not isinstance(market, dict):
             continue
-        if market.get("active") is not True or market.get("closed") is True:
+        if not _open_market(market, current):
             continue
         item = _market_outcome(market, topic)
         if item:
@@ -316,6 +433,10 @@ def normalize_event(
     return {
         "topic_id": topic["topic_id"],
         "label": topic["label"],
+        "selection_role": topic.get("selection_role", "core"),
+        "topic_kind": topic.get("topic_kind"),
+        "selection_rank": topic.get("selection_rank"),
+        "selection_reason": topic.get("selection_reason"),
         "display_label": _display_topic(event, topic),
         "presentation": presentation,
         "policy_action": policy_action or None,
@@ -439,8 +560,90 @@ def collect_expectations(
                 }
             )
             warnings.append({"topic_id": str(topic.get("topic_id")), "message": message})
+    core_topic_count = len(topics)
     ready_count = sum(item.get("state") == "ready" for item in topics)
-    if ready_count == len(topics) and topics:
+    featured_config = config.get("featured_markets", {})
+    featured_results: list[tuple[dict[str, Any], dict[str, Any]]] = []
+    for query_spec in featured_config.get("queries", []):
+        if not isinstance(query_spec, dict):
+            continue
+        query = urlencode(
+            {
+                "q": query_spec.get("query", ""),
+                "limit_per_type": int(
+                    featured_config.get("max_results_per_query", limit)
+                ),
+            }
+        )
+        try:
+            featured_results.append(
+                (
+                    query_spec,
+                    _fetch_json(f"{base_url}/public-search?{query}", timeout_seconds),
+                )
+            )
+        except (ExpectationsError, subprocess.TimeoutExpired) as exc:
+            warnings.append(
+                {
+                    "topic_id": f"featured:{query_spec.get('query')}",
+                    "message": str(exc)[:300],
+                }
+            )
+    excluded_event_ids = {
+        str(item.get("event_id"))
+        for item in topics
+        if item.get("state") == "ready" and item.get("event_id")
+    }
+    featured_pairs = select_featured_events(
+        featured_results,
+        featured_config,
+        excluded_event_ids=excluded_event_ids,
+        now=current,
+    )
+    for rank, (query_spec, event) in enumerate(featured_pairs, start=1):
+        event_id = str(event.get("id") or "")
+        topic = {
+            "topic_id": f"featured_polymarket_{event_id}",
+            "label": str(query_spec.get("label") or event.get("title") or "宏观市场"),
+            "display_label": str(
+                query_spec.get("display_label")
+                or query_spec.get("label")
+                or event.get("title")
+                or "宏观市场"
+            ),
+            "topic_kind": query_spec.get("topic_kind"),
+            "presentation": (
+                "distribution"
+                if _is_neg_risk_event(event) and len(event.get("markets", [])) > 1
+                else "multi_market"
+                if len(event.get("markets", [])) > 1
+                else "binary"
+            ),
+            "selection_role": "featured",
+            "selection_rank": rank,
+            "selection_reason": "从未到期的宏观候选中，按 24 小时成交额和流动性排序。",
+            "maximum_age_hours": featured_config.get("maximum_age_hours", 36),
+            "minimum_liquidity_usd": featured_config.get(
+                "minimum_liquidity_usd", 0
+            ),
+            "minimum_volume_24h_usd": featured_config.get(
+                "minimum_volume_24h_usd", 0
+            ),
+        }
+        try:
+            topics.append(normalize_event(event, topic, now=current))
+        except ExpectationsError as exc:
+            warnings.append(
+                {
+                    "topic_id": topic["topic_id"],
+                    "message": str(exc)[:300],
+                }
+            )
+    featured_count = sum(
+        item.get("state") == "ready" and item.get("selection_role") == "featured"
+        for item in topics
+    )
+    if ready_count == core_topic_count and core_topic_count:
         status = "ready"
     elif ready_count:
         status = "degraded"
@@ -449,7 +652,7 @@ def collect_expectations(
     history_path = data_dir / "expectations" / "history.json"
     history = _update_history(_load_history(history_path), topics, generated_at)
     payload = {
-        "schema_version": "1.1",
+        "schema_version": "1.2",
         "generated_at": generated_at,
         "status": status,
         "provider": provider,
@@ -460,8 +663,17 @@ def collect_expectations(
                 "互斥分布保留原始盘口合计与相对 100% 的差值，不静默归一化。",
                 "年度加息和降息次数是两组累计盘口，不能互减成净政策路径。",
                 "低流动性市场标为 thin，不作为强证据。",
+                "已到期、已关闭或已归档的事件和子市场不展示。",
+                "高成交宏观市场从多个相关主题中按 24 小时成交额排序，并限制单一主题的占比。",
                 "预测市场缺失不会阻断官方数据与 Agent 分析。",
             ],
+        },
+        "featured_selection": {
+            "status": "ready" if featured_count else "unavailable",
+            "ready_count": featured_count,
+            "maximum_items": int(featured_config.get("max_items", 5)),
+            "ranking": "volume_24h_desc_then_liquidity_desc",
+            "expired_markets_hidden": True,
         },
         "cme_fedwatch": config.get("cme_fedwatch", {}),
         "topics": topics,

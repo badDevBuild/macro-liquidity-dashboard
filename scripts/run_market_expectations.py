@@ -33,6 +33,11 @@ def main() -> int:
                     item.get("state") == "ready" for item in result.get("topics", [])
                 ),
                 "topic_count": len(result.get("topics", [])),
+                "featured_topic_count": sum(
+                    item.get("state") == "ready"
+                    and item.get("selection_role") == "featured"
+                    for item in result.get("topics", [])
+                ),
                 "warnings": result.get("warnings", []),
             },
             ensure_ascii=False,

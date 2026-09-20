@@ -1019,6 +1019,9 @@ class FrontendDeploymentTests(unittest.TestCase):
         self.assertIn("降息和加息两组可能同时非零", app)
         self.assertIn("未归一化", app)
         self.assertIn("data-expectation-toggle", app)
+        self.assertIn("高成交宏观盘口", app)
+        self.assertIn("仅展示未到期市场", app)
+        self.assertIn("topic.state === \"ready\"", app)
 
     def test_frontend_uses_plain_errors_and_no_accent_side_stripes(self) -> None:
         app = (PROJECT_ROOT / "web" / "assets" / "app.js").read_text(
