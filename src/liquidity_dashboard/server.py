@@ -76,8 +76,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
             query = parse_qs(parsed.query)
             metric_id = query.get("metric_id", [""])[0]
             range_id = query.get("range", ["3m"])[0]
+            requested_release_id = query.get("release_id", [""])[0]
             try:
-                self._json(build_series(self.project_root, metric_id, range_id))
+                payload = build_series(self.project_root, metric_id, range_id)
+                if requested_release_id and requested_release_id != payload.get("release_id"):
+                    self._error(HTTPStatus.CONFLICT, "dashboard release changed; refresh required")
+                    return
+                self._json(payload)
             except ValueError as exc:
                 LOGGER.info("invalid series request: %s", exc)
                 self._error(HTTPStatus.BAD_REQUEST, "invalid metric or range")

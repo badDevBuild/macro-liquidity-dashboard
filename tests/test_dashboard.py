@@ -868,11 +868,11 @@ class FrontendDeploymentTests(unittest.TestCase):
         self.assertIn('localStorage.setItem(THEME_KEY, nextTheme)', app)
         self.assertIn('setAttribute("aria-pressed"', app)
         self.assertIn('html[data-theme="dark"]', styles)
-        self.assertIn('assets/app.css?v=43', index)
-        self.assertIn('assets/app.js?v=43', index)
-        self.assertIn('assets/coinbase-premium.js?v=43', index)
-        self.assertIn('assets/coinbase-premium.js?v=43', service_worker)
-        self.assertIn('`${CACHE_PREFIX}shell-v43`', service_worker)
+        self.assertIn('assets/app.css?v=44', index)
+        self.assertIn('assets/app.js?v=44', index)
+        self.assertIn('assets/coinbase-premium.js?v=44', index)
+        self.assertIn('assets/coinbase-premium.js?v=44', service_worker)
+        self.assertIn('`${CACHE_PREFIX}shell-v44`', service_worker)
         self.assertIn('`${CACHE_PREFIX}data-v3`', service_worker)
         self.assertIn('key.startsWith(CACHE_PREFIX)', service_worker)
         self.assertNotIn('.filter((key) => ![SHELL_CACHE, DATA_CACHE].includes(key))', service_worker)
@@ -887,6 +887,27 @@ class FrontendDeploymentTests(unittest.TestCase):
         self.assertIn("maximumIndex", app)
         self.assertIn("_segmentStart", app)
         self.assertIn("chartDataTable(tablePoints, metric, rangeId)", app)
+        self.assertIn("state.seriesRequests.delete(mainChart)", app)
+
+    def test_frontend_missing_curve_values_never_claim_no_inversion(self) -> None:
+        app = (PROJECT_ROOT / "web" / "assets" / "app.js").read_text(encoding="utf-8")
+        self.assertIn("当前利差不可用，不判断是否倒挂", app)
+        self.assertIn("只有历史值", app)
+        self.assertNotIn("const inverted = numericOrNull(spread.value) < 0", app)
+
+    def test_frontend_evidence_links_open_the_full_metric_registry(self) -> None:
+        app = (PROJECT_ROOT / "web" / "assets" / "app.js").read_text(encoding="utf-8")
+        self.assertIn("data-evidence-metric", app)
+        self.assertIn("function openEvidenceMetric", app)
+        self.assertIn("Object.values(data.metrics || {})", app)
+        self.assertIn("Object.values(data.derived_metrics || {})", app)
+        self.assertNotIn('analysis.watch_items?.[0]?.trigger || "这轮没有明显的反向信号。"', app)
+
+    def test_all_line_chart_sizes_share_gap_segmentation(self) -> None:
+        app = (PROJECT_ROOT / "web" / "assets" / "app.js").read_text(encoding="utf-8")
+        self.assertIn("const segments = chartSegments(rawPoints, metric);", app)
+        self.assertIn("const segmented = chartSegments(series.points, series);", app)
+        self.assertGreaterEqual(app.count("_segmentStart"), 5)
 
     def test_derivatives_separates_price_change_from_funding_rate(self) -> None:
         app = (PROJECT_ROOT / "web" / "assets" / "app.js").read_text(
@@ -957,6 +978,9 @@ class FrontendDeploymentTests(unittest.TestCase):
         self.assertIn("当前数据已经过期", app)
         self.assertIn("status.service_status?.code", app)
         self.assertIn("status.update_status?.code", app)
+        model = (PROJECT_ROOT / "src" / "liquidity_dashboard" / "model.py").read_text(encoding="utf-8")
+        self.assertIn('publication_status == "publish_degraded"', model)
+        self.assertIn('"analysis_eligible": runtime_analysis_allowed', model)
 
     def test_mobile_overview_places_real_trend_before_component_evidence(self) -> None:
         app = (PROJECT_ROOT / "web" / "assets" / "app.js").read_text(
@@ -1082,6 +1106,10 @@ class FrontendDeploymentTests(unittest.TestCase):
                 )["run_id"],
             )
             self.assertIn("data/channel.sqlite3", paths)
+            self.assertIn("data/release.json", paths)
+            release = json.loads((output / "data" / "release.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["release_id"], release["release_id"])
+            self.assertTrue(manifest["release_id"].startswith("release-"))
             self.assertIn("data/analysis/shadow/latest.json", paths)
             if (PROJECT_ROOT / "data" / "cross-asset" / "latest.json").is_file():
                 self.assertIn("data/cross-asset/latest.json", paths)
@@ -1097,6 +1125,11 @@ class FrontendDeploymentTests(unittest.TestCase):
 
 
 class DashboardServerTests(unittest.TestCase):
+    def test_series_api_rejects_a_different_release_identity(self) -> None:
+        server_source = (PROJECT_ROOT / "src" / "liquidity_dashboard" / "server.py").read_text(encoding="utf-8")
+        self.assertIn('requested_release_id != payload.get("release_id")', server_source)
+        self.assertIn("HTTPStatus.CONFLICT", server_source)
+
     def test_api_errors_do_not_expose_internal_paths(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

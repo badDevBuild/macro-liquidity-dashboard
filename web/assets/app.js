@@ -69,10 +69,10 @@ const SOAK_STATUS_LABELS = {
   not_ready: "稳定性观察中"
 };
 const VIEW_LABELS = {
-  overview: "总览",
-  transmission: "传导",
-  ledger: "账本",
-  data: "数据"
+  overview: "晨报",
+  transmission: "专题",
+  ledger: "指标",
+  data: "状态"
 };
 const QUALITY_LABELS = {
   fresh_network: "刚从来源更新",
@@ -576,14 +576,22 @@ function analysisClaimList(data, items, emptyText) {
   return `<ul class="agent-claim-list">${items.map((item) => `
     <li>
       <strong>${escapeHTML(plainAgentText(item.claim || "未命名结论"))}</strong>
-      <span>${(item.evidence || []).map((evidence) => `<a href="#ledger">${escapeHTML(evidenceText(data, evidence))}</a>`).join("；")}</span>
+      <span>${(item.evidence || []).map((evidence) => evidenceLink(data, evidence.metric_id, evidenceText(data, evidence), evidence)).join("；")}</span>
     </li>`).join("")}</ul>`;
 }
 
 function dailyUpdateEvidence(data, dailyUpdate) {
   const items = Array.isArray(dailyUpdate?.evidence) ? dailyUpdate.evidence : [];
   if (!items.length) return `<p class="agent-empty-copy">没有新发布的官方数据。</p>`;
-  return `<ul class="agent-daily-evidence">${items.map((evidence) => `<li><a href="#ledger">${escapeHTML(evidenceText(data, evidence))}</a></li>`).join("")}</ul>`;
+  return `<ul class="agent-daily-evidence">${items.map((evidence) => `<li>${evidenceLink(data, evidence.metric_id, evidenceText(data, evidence), evidence)}</li>`).join("")}</ul>`;
+}
+
+function evidenceLink(data, metricId, label, evidence = {}) {
+  const resolvedId = metricId === "net_liquidity_proxy_latest_release" || metricId === "net_liquidity_proxy_weekly"
+    ? "net_liquidity_proxy"
+    : metricId;
+  const analysisId = data.agent_analysis?.analysis_id || "";
+  return `<a href="#ledger" data-evidence-metric="${escapeHTML(resolvedId || "")}" data-evidence-window="${escapeHTML(evidence.comparison_window || "")}" data-evidence-date="${escapeHTML(evidence.observed_at || "")}" data-evidence-analysis="${escapeHTML(analysisId)}">${escapeHTML(label)}</a>`;
 }
 
 function contextMetricById(data, id) {
@@ -605,7 +613,7 @@ function contextMetricLinks(data, item, eventMode) {
     .filter(Boolean)
     .slice(0, 4);
   if (!metrics.length) return "";
-  return `<div class="context-metric-links"><span>${eventMode ? "公布前看" : "关联数据"}</span>${metrics.map((metric) => `<a href="#ledger">${escapeHTML(`${metric.short_label || metric.label} ${formatMetricValue(metric, true)}`)}</a>`).join("")}</div>`;
+  return `<div class="context-metric-links"><span>${eventMode ? "公布前看" : "关联数据"}</span>${metrics.map((metric) => evidenceLink(data, metric.metric_id || metric.id, `${metric.short_label || metric.label} ${formatMetricValue(metric, true)}`)).join("")}</div>`;
 }
 
 function contextBasisLabel(item) {
@@ -688,7 +696,7 @@ function renderAgentAnalysis(data) {
 
   const model = analysis.model || {};
   const dailyUpdate = analysis.daily_update || {};
-  const counterSignal = analysis.contradictions?.[0]?.claim || analysis.watch_items?.[0]?.trigger || "这轮没有明显的反向信号。";
+  const counterSignal = analysis.contradictions?.[0]?.claim || "这轮没有观察到明显的反向信号。";
   const watches = Array.isArray(analysis.watch_items) && analysis.watch_items.length
     ? `<ul class="agent-watch-list">${analysis.watch_items.map((item) => `<li><strong>${escapeHTML(plainAgentText(item.trigger))}</strong><span>${escapeHTML(plainAgentText(item.why))}</span></li>`).join("")}</ul>`
     : `<p class="agent-empty-copy">今天没有新增观察条件。</p>`;
@@ -858,13 +866,16 @@ function renderOverview(data) {
   const trendChanges = proxy.trend_changes || {};
   const weeklyChange = numericOrNull(trendChanges["1w"]?.change);
   const latestReleaseChange = numericOrNull(proxy.latest_release_change);
-  const headlineChange = latestReleaseChange;
+  const observationCurrent = proxy.available_for_analysis === true;
+  const headlineChange = observationCurrent ? latestReleaseChange : null;
   const direction = headlineChange === null ? "unavailable" : headlineChange > 0 ? "improving" : headlineChange < 0 ? "tightening" : "flat";
   const directionClass = `direction-${direction}`;
   const currentProxyValue = numericOrNull(proxy.value);
   const currentValue = currentProxyValue === null ? "不可用" : formatUsdMillions(currentProxyValue);
   const changeValue = headlineChange === null ? "无法计算" : formatUsdMillions(headlineChange, true);
-  const overviewHeadline = latestReleaseChange === null
+  const overviewHeadline = !observationCurrent
+    ? `正在查看 ${formatDate(proxy.observed_at)} 的上次有效快照`
+    : latestReleaseChange === null
     ? "最新变化还无法合计"
     : latestReleaseChange > 0 && weeklyChange !== null && weeklyChange < 0
       ? "最新数据回流，但近一周仍在减少"
@@ -961,6 +972,7 @@ function renderOverview(data) {
     </details>`).join("");
 
   const latestRun = data.snapshot.completed_at;
+  const runtimeEligibleCount = status.data_status?.runtime_eligible_metric_count ?? status.eligible_metric_count;
   const fedWeekly = data.metrics.fed_total_assets;
   const tgaDaily = data.metrics.tga_daily;
   const rrpDaily = data.metrics.overnight_rrp;
@@ -975,10 +987,15 @@ function renderOverview(data) {
     : fundingValue === 0
       ? "SOFR 与准备金利息持平"
       : `SOFR 比准备金利息${fundingValue > 0 ? "高" : "低"} ${roundForDisplay(Math.abs(fundingValue), 2)} 个基点`;
-  const curveShort = numericOrNull(curveSpread?.value) < 0
-    ? `倒挂 ${Number(curveSpread?.streak?.observations || 0)} 个有效日`
-    : "当前未倒挂";
   const curveValue = numericOrNull(curveSpread?.value);
+  const curveCurrent = curveSpread?.available_for_analysis !== false && !["stale_source", "stale_fallback", "unavailable"].includes(curveSpread?.quality_status);
+  const curveShort = curveValue === null
+    ? "当前无法判断"
+    : !curveCurrent
+      ? "只有历史值"
+      : curveValue < 0
+        ? `倒挂 ${Number(curveSpread?.streak?.observations || 0)} 个有效日`
+        : "当前未倒挂";
   const curveDetail = curveValue === null
     ? "10 年期与 2 年期收益率差不可用"
     : `10 年期收益率比 2 年期${curveValue >= 0 ? "高" : "低"} ${roundForDisplay(Math.abs(curveValue), 2)} 个基点`;
@@ -992,7 +1009,7 @@ function renderOverview(data) {
     : `日元近 5 个交易日 ${formatSignedPercent(yenAppreciation)}；USD/JPY ${roundForDisplay(usdJpy, 2)}`;
   const wtiMetric = data.metrics?.energy_wti_spot;
   const wtiOneWeek = numericOrNull(wtiMetric?.changes?.["1w"]?.percent_change);
-  const oilShort = !wtiMetric?.available_for_analysis ? "数据不完整" : wtiOneWeek === null ? "最新价可用" : wtiOneWeek > 3 ? "通胀压力升温" : wtiOneWeek < -3 ? "需求信号需复核" : "油价波动温和";
+  const oilShort = !wtiMetric?.available_for_analysis ? "数据不完整" : wtiOneWeek === null ? "最新价可用" : Math.abs(wtiOneWeek) > 3 ? `油价一周${wtiOneWeek > 0 ? "上涨" : "下跌"}较明显` : "油价一周变化不大";
   const oilDetail = !wtiMetric?.available_for_analysis ? "WTI 或 Brent 本轮不可用" : `WTI ${formatMetricValue(wtiMetric, true)}；1 周 ${wtiOneWeek === null ? "暂无可比" : formatSignedPercent(wtiOneWeek)}`;
   const policyExpectationShort = (topic, action) => {
     if (!topic?.top_outcome) return `${action}：不可用`;
@@ -1006,12 +1023,13 @@ function renderOverview(data) {
       <details class="trust-panel" aria-labelledby="trust-title">
         <summary id="trust-title">
           <span class="status-pill ${statusClass(currentStatusCode)}">${escapeHTML(STATUS_LABELS[currentStatusCode] || "状态未知")}</span>
-          <span class="trust-summary-meta">${status.eligible_metric_count}/${status.total_metric_count} 项可用 · ${escapeHTML(formatDateTime(latestRun))} 更新</span>
+          <span class="trust-summary-meta">${runtimeEligibleCount}/${status.total_metric_count} 项当前可用 · ${escapeHTML(formatDateTime(latestRun))} 更新</span>
           <span class="disclosure-caret" aria-hidden="true">›</span>
         </summary>
         <div class="trust-detail">
           <div class="trust-stats">
-            <div class="trust-stat"><strong>${status.eligible_metric_count}/${status.total_metric_count}</strong><span>本次可用</span></div>
+            <div class="trust-stat"><strong>${runtimeEligibleCount}/${status.total_metric_count}</strong><span>现在可用</span></div>
+            <div class="trust-stat"><strong>${status.eligible_metric_count}/${status.total_metric_count}</strong><span>发布时通过</span></div>
             <div class="trust-stat"><strong>${roundForDisplay((status.coverage_ratio || 0) * 100, 0)}%</strong><span>数据完整度</span></div>
             <div class="trust-stat"><strong>${escapeHTML(formatDateTime(latestRun))}</strong><span>北京时间更新</span></div>
           </div>
@@ -1200,11 +1218,19 @@ function treasuryCurvePanel(data) {
   const curve = data.treasury_curve || {};
   const spreadIds = ["spread_10y_2y", "spread_10y_3m", "spread_30y_10y"];
   const rows = spreadIds.map((id) => curve.spreads?.[id]).filter(Boolean).map((spread) => {
-    const inverted = numericOrNull(spread.value) < 0;
-    const streak = inverted && spread.streak?.active
-      ? `已倒挂 ${spread.streak.observations} 个有效日 · 从 ${formatDate(spread.streak.start_date)} 开始`
-      : "当前没有倒挂";
-    return `<div class="curve-spread-row"><span>${escapeHTML(spread.label)}</span><strong class="${inverted ? "spread-alert" : ""}">${escapeHTML(formatBp(spread.value))}</strong><small>${escapeHTML(streak)}</small></div>`;
+    const value = numericOrNull(spread.value);
+    const isCurrent = spread.available_for_analysis !== false && !["stale_source", "stale_fallback", "unavailable"].includes(spread.quality_status);
+    const inverted = value !== null && value < 0;
+    const stateText = value === null
+      ? "当前利差不可用，不判断是否倒挂"
+      : !isCurrent
+        ? `这是 ${formatDate(spread.observed_at)} 的历史值，不代表当前状态`
+        : inverted && spread.streak?.active
+          ? `已倒挂 ${spread.streak.observations} 个有效日 · 从 ${formatDate(spread.streak.start_date)} 开始`
+          : inverted
+            ? "当前倒挂，持续天数暂不可用"
+            : "当前未倒挂";
+    return `<div class="curve-spread-row"><span>${escapeHTML(spread.label)}</span><strong class="${isCurrent && inverted ? "spread-alert" : ""}">${value === null ? "不可用" : escapeHTML(formatBp(value))}</strong><small>${escapeHTML(stateText)}</small></div>`;
   }).join("");
   return `
     <div class="special-analysis curve-analysis">
@@ -1698,14 +1724,16 @@ function derivativesPanel(data) {
       <span><small>24 小时主动买入</small>${numericOrNull(venue.taker_buy_share_24h_pct) === null ? "未覆盖" : escapeHTML(`${roundForDisplay(Number(venue.taker_buy_share_24h_pct), 1)}%`)}</span>
     </div>`).join("");
   const errors = [...(asset.errors || []), ...(asset.signal_errors || [])];
+  const venueCount = Number(asset.venue_count || asset.venues?.length || 0);
+  const expectedVenueCount = Number(asset.expected_venue_count || 3);
   return `
     <div class="crypto-channel-panel derivatives-panel" aria-labelledby="derivatives-title">
       <div class="section-heading"><div><h3 id="derivatives-title">杠杆是在增加，还是正在退潮</h3><p>把未平仓、价格和资金费率放在一起看。</p></div><span class="quality-pill ${status.className}">${escapeHTML(asset.quality_status === "fresh_cache" ? "使用有效缓存" : `${asset.venue_count}/3 家可用`)}</span></div>
       <div class="crypto-asset-switch" role="group" aria-label="选择衍生品资产">${cryptoAssetButtons("derivatives", symbol)}</div>
       <p class="stablecoin-answer">${escapeHTML(derivativesSentence(symbol, openInterest, priceChange, funding8h, fundingAnnualized, accountLong, takerBuy))}</p>
       <div class="crypto-summary-grid derivatives-summary-grid">
-        <div><span>三家未平仓合计</span><strong>${escapeHTML(formatMetricValue(openInterest, true))}</strong><small>24 小时 ${oiDay?.percent_change === null || oiDay?.percent_change === undefined ? "不可比" : `${oiDay.percent_change >= 0 ? "+" : "−"}${roundForDisplay(Math.abs(oiDay.percent_change), 2)}%`} · 7 天 ${oiWeek?.percent_change === null || oiWeek?.percent_change === undefined ? "不可比" : `${oiWeek.percent_change >= 0 ? "+" : "−"}${roundForDisplay(Math.abs(oiWeek.percent_change), 2)}%`}</small></div>
-        <div><span>8 小时等价资金费率</span><strong>${escapeHTML(formatSignedPercent(funding8h?.value, 4))}</strong><small>三家按未平仓加权 · 年化等价 ${escapeHTML(formatSignedPercent(fundingAnnualized?.value, 2))}</small></div>
+        <div><span>${escapeHTML(`${venueCount}/${expectedVenueCount} 家未平仓合计`)}</span><strong>${escapeHTML(formatMetricValue(openInterest, true))}</strong><small>24 小时 ${oiDay?.percent_change === null || oiDay?.percent_change === undefined ? "不可比" : `${oiDay.percent_change >= 0 ? "+" : "−"}${roundForDisplay(Math.abs(oiDay.percent_change), 2)}%`} · 7 天 ${oiWeek?.percent_change === null || oiWeek?.percent_change === undefined ? "不可比" : `${oiWeek.percent_change >= 0 ? "+" : "−"}${roundForDisplay(Math.abs(oiWeek.percent_change), 2)}%`}</small></div>
+        <div><span>8 小时等价资金费率</span><strong>${escapeHTML(formatSignedPercent(funding8h?.value, 4))}</strong><small>${escapeHTML(`${venueCount}/${expectedVenueCount} 家按未平仓加权`)} · 年化等价 ${escapeHTML(formatSignedPercent(fundingAnnualized?.value, 2))}</small></div>
         <div><span>24 小时价格变化</span><strong>${escapeHTML(formatSignedPercent(priceChange?.value, 2))}</strong><small>三家永续合约价格变化中位数</small></div>
         <div><span>多头账户占比</span><strong>${accountValue === null ? "不可用" : escapeHTML(`${roundForDisplay(accountValue, 1)}%`)}</strong><small>${escapeHTML(`${asset.account_coverage?.length || 0}/3 家中位数`)} · 统计账户，不是资金</small></div>
         <div><span>24 小时主动买入占比</span><strong>${takerValue === null ? "不可用" : escapeHTML(`${roundForDisplay(takerValue, 1)}%`)}</strong><small>${escapeHTML(`${asset.taker_coverage?.length || 0}/2 家中位数`)} · 成交方向，不是持仓</small></div>
@@ -2017,12 +2045,13 @@ function drawYenMultiChart(container, rawPoints, specs, {rangeId, normalize = fa
   const plotHeight = height - top - bottom;
   const yFor = (value) => top + (maximum - Number(value)) / (maximum - minimum) * plotHeight;
   const lines = usableSpecs.map((series) => {
-    const points = downsample(series.points, 320);
+    const segmented = chartSegments(series.points, series);
+    const points = segmented.flatMap((segment) => downsample(segment, Math.max(8, Math.floor(320 / Math.max(1, segmented.length)))).map((point, index) => ({...point, _segmentStart: index === 0})));
     const coordinates = points.map((point) => {
       const moment = Date.parse(`${point.observed_at.slice(0, 10)}T00:00:00Z`);
       return [left + (moment - firstTime) / timeSpan * plotWidth, yFor(point.value)];
     });
-    const path = coordinates.map(([x, y], index) => `${index ? "L" : "M"}${x.toFixed(2)} ${y.toFixed(2)}`).join(" ");
+    const path = coordinates.map(([x, y], index) => `${points[index]._segmentStart ? "M" : "L"}${x.toFixed(2)} ${y.toFixed(2)}`).join(" ");
     const last = coordinates.at(-1);
     const lastPoint = points.at(-1);
     return `<path class="chart-line yen-line yen-line-${series.index + 1}" d="${path}"></path><circle class="yen-dot yen-dot-${series.index + 1}" cx="${last[0].toFixed(2)}" cy="${last[1].toFixed(2)}" r="4"><title>${escapeHTML(`${series.label}：${roundForDisplay(lastPoint.value, normalize ? 1 : 2)}`)}</title></circle>`;
@@ -2466,15 +2495,14 @@ function renderTransmission(data) {
   const market = data.layers.find((layer) => layer.group_id === "market_transmission") || {metrics: []};
   const remainingMarket = market.metrics.filter((metric) => !["treasury_3m_yield", "treasury_2y_yield", "treasury_10y_yield", "treasury_30y_yield"].includes(metric.metric_id));
   const steps = [
-    {id: "fed_balance_sheet", index: 1, title: "美联储的账本", note: fed.flow_note, body: `<div class="flow-metrics">${genericFlowMetrics(fed.metrics)}</div>`},
-    {id: "fiscal_cash", index: 2, title: "财政部的钱", note: fiscal.flow_note, body: `<div class="flow-metrics">${genericFlowMetrics(fiscal.metrics)}</div>`},
-    {id: "money_market", index: 3, title: "短期借钱市场", note: "先看四个隔夜利率之间的差值，再判断现金是否真的变紧。", body: fundingPanel(data)},
-    {id: "market_transmission", index: 4, title: "市场如何定价", note: "收益率曲线告诉我们不同期限的利率定价；预测市场补充说明交易者当前押注什么。", body: `${treasuryCurvePanel(data)}${marketExpectationsPanel(data)}<div class="flow-metrics">${genericFlowMetrics(remainingMarket)}</div>`}
+    {id: "fed_balance_sheet", title: "宏观账本：美联储", note: fed.flow_note, body: `<div class="flow-metrics">${genericFlowMetrics(fed.metrics)}</div>`},
+    {id: "fiscal_cash", title: "宏观账本：财政部", note: fiscal.flow_note, body: `<div class="flow-metrics">${genericFlowMetrics(fiscal.metrics)}</div>`},
+    {id: "money_market", title: "融资与定价：短期资金", note: "先看四个隔夜利率之间的差值，再判断现金是否真的变紧。", body: fundingPanel(data)},
+    {id: "market_transmission", title: "融资与定价：利率曲线与市场预期", note: "收益率曲线告诉我们不同期限的利率定价；预测市场补充说明交易者当前押注什么。", body: `${treasuryCurvePanel(data)}${marketExpectationsPanel(data)}<div class="flow-metrics">${genericFlowMetrics(remainingMarket)}</div>`}
   ].map((step) => `
-    <li id="flow-${escapeHTML(step.id)}" class="flow-step group-${escapeHTML(step.id)}">
-      <span class="flow-index">${step.index}</span>
+    <section id="flow-${escapeHTML(step.id)}" class="flow-step group-${escapeHTML(step.id)}">
       <article class="flow-panel"><h2>${escapeHTML(step.title)}</h2><p>${escapeHTML(step.note || "")}</p>${step.body}</article>
-    </li>`).join("");
+    </section>`).join("");
 
   document.querySelector("#view-transmission").innerHTML = `
     <header class="page-header">
@@ -2490,7 +2518,7 @@ function renderTransmission(data) {
       <button type="button" data-flow-target="flow-cross-asset">相对强弱</button>
       <button type="button" data-flow-target="flow-crypto">加密管道</button>
     </nav>
-    <ol class="flow-map">${steps}</ol>
+    <div class="flow-map">${steps}</div>
     ${yenCarryPanel(data)}
     ${energyPanel(data)}
     ${crossAssetPanel(data)}
@@ -2529,7 +2557,7 @@ function renderTransmission(data) {
   bindCryptoMarketInteractions(data);
 }
 
-function ledgerMetric(metric) {
+function ledgerMetric(metric, chartAvailable = true) {
   const delta = formatMetricDelta(metric);
   const quality = QUALITY_LABELS[metric.quality_status] || "状态未知";
   const changes = ["1w", "1m", "3m", "1y"].map((windowId) => {
@@ -2537,9 +2565,9 @@ function ledgerMetric(metric) {
     return `<div><span>比 ${escapeHTML(CHANGE_LABELS[windowId])}前</span><strong>${escapeHTML(formatChangeValue(metric, item.change))}</strong></div>`;
   }).join("");
   return `
-    <details class="metric-disclosure" data-group="${escapeHTML(metric.group)}" data-metric-id="${escapeHTML(metric.metric_id)}">
+    <details class="metric-disclosure" data-group="${escapeHTML(metric.group || "derived")}" data-metric-id="${escapeHTML(metric.metric_id || metric.id)}">
       <summary class="metric-summary">
-        <span class="metric-name"><strong>${escapeHTML(metric.label)}</strong><span>${escapeHTML(GROUP_LABELS[metric.group] || metric.group)} · ${escapeHTML(formatDate(metric.observed_at))}</span></span>
+        <span class="metric-name"><strong>${escapeHTML(metric.label)}</strong><span>${escapeHTML(GROUP_LABELS[metric.group] || (metric.group === "derived" ? "公式与市场概率" : "其他指标"))} · ${escapeHTML(formatDate(metric.observed_at))}</span></span>
         <span class="metric-reading"><strong>${escapeHTML(formatMetricValue(metric))}</strong><span class="${delta.className}">${escapeHTML(delta.text)}</span></span>
         <svg class="disclosure-chevron" viewBox="0 0 20 20" aria-hidden="true"><path d="m5 7.5 5 5 5-5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7"></path></svg>
       </summary>
@@ -2550,10 +2578,10 @@ function ledgerMetric(metric) {
           <div><strong>平时怎么读</strong><p>${escapeHTML(metric.direction_note)}</p></div>
         </div>
         <div class="metric-change-grid" aria-label="不同时间长度的变化">${changes}</div>
-        <div class="range-controls" role="group" aria-label="选择历史区间">
+        ${chartAvailable ? `<div class="range-controls" role="group" aria-label="选择历史区间">
           ${Object.entries(RANGE_LABELS).map(([id, label]) => `<button class="range-button" type="button" data-range="${id}" aria-pressed="${id === "1y"}">${escapeHTML(label)}</button>`).join("")}
         </div>
-        <div class="chart-shell" data-chart-for="${escapeHTML(metric.metric_id)}"><div class="chart-state">展开后显示一年走势</div></div>
+        <div class="chart-shell" data-chart-for="${escapeHTML(metric.metric_id || metric.id)}"><div class="chart-state">展开后显示一年走势</div></div>` : `<div class="chart-state">这是公式结果或市场概率，当前发布包只保留本轮证据，不会凭空补历史线。</div>`}
         <dl class="method-grid">
           <dt>这条数据的日期</dt><dd>${escapeHTML(metric.observed_at || "不可用")}</dd>
           <dt>用来做周比较的日期</dt><dd>${escapeHTML(metric.week_prior_observed_at || "历史不足")}</dd>
@@ -2566,23 +2594,41 @@ function ledgerMetric(metric) {
 }
 
 function renderLedger(data) {
-  const metrics = data.layers.flatMap((layer) => layer.metrics);
+  const baseMetrics = Object.values(data.metrics || {});
+  const derivedMetrics = Object.values(data.derived_metrics || {}).map((metric) => ({
+    description: "由页面所列基础数据或市场概率确定性生成。",
+    direction_note: "请结合数值日期、可用状态和对应专题解读。",
+    group: "derived",
+    ...metric,
+  }));
+  const proxyMetric = {...data.proxy, metric_id: "net_liquidity_proxy", group: "derived", description: `公式：${data.proxy.formula}。`, direction_note: data.proxy.trend_method};
+  const metrics = [proxyMetric, ...baseMetrics, ...derivedMetrics].filter((metric, index, items) => {
+    const id = metric.metric_id || metric.id;
+    return id && items.findIndex((candidate) => (candidate.metric_id || candidate.id) === id) === index;
+  });
   const filters = [
     ["all", "全部"],
     ["fed_balance_sheet", "联储"],
     ["fiscal_cash", "财政"],
     ["money_market", "货币市场"],
-    ["market_transmission", "市场传导"]
+    ["market_transmission", "市场传导"],
+    ["crypto_liquidity", "加密内部"],
+    ["crypto_etf", "ETF"],
+    ["crypto_derivatives", "衍生品"],
+    ["cross_asset", "跨资产"],
+    ["yen_carry", "日元套息"],
+    ["energy", "原油"],
+    ["derived", "公式与概率"]
   ];
   document.querySelector("#view-ledger").innerHTML = `
     <header class="page-header">
-      <div><p class="eyebrow">逐条看数据</p><h1 id="ledger-title">${metrics.length} 条核心数据和它们的走势</h1></div>
+      <div><p class="eyebrow">指标与证据</p><h1 id="ledger-title">${metrics.length} 条指标和本轮证据</h1></div>
       <p>点开任意一条，就能看 1 周、1 月、3 月、1 年的变化，也能切换完整历史。没有拿到的数据会写“不可用”，不会写成零。</p>
     </header>
     <div class="filters" role="group" aria-label="按宏观层级筛选">
       ${filters.map(([id, label]) => `<button class="filter-button" type="button" data-filter="${id}" aria-pressed="${id === state.ledgerFilter}">${escapeHTML(label)}</button>`).join("")}
     </div>
-    <div class="ledger-list">${metrics.map(ledgerMetric).join("")}</div>`;
+    <div class="ledger-list">${metrics.map((metric) => ledgerMetric(metric, Boolean((data.metrics || {})[metric.metric_id]) || metric.metric_id === "net_liquidity_proxy")).join("")}</div>`;
   bindLedgerInteractions();
   applyLedgerFilter();
 }
@@ -2638,12 +2684,21 @@ function renderData(data) {
   const unavailable = status.unavailable.length
     ? status.unavailable.map((metric) => metric.label).join("、")
     : "无";
+  const anomalyMap = new Map();
+  (status.unavailable || []).forEach((metric) => anomalyMap.set(metric.metric_id || metric.label, `${metric.label}：本轮不可用`));
+  (status.runtime_stale || []).forEach((metric) => anomalyMap.set(metric.metric_id || metric.label, `${metric.label}：数据已过期`));
+  (status.warnings || []).forEach((warning, index) => anomalyMap.set(`warning-${index}`, plainChannelIssue(warning)));
+  const anomalyItems = [...anomalyMap.values()];
+  const anomalyPanel = anomalyItems.length
+    ? `<section class="dashboard-section" aria-labelledby="anomaly-title"><div class="section-heading"><div><p class="eyebrow">需要先知道</p><h2 id="anomaly-title">本轮有 ${anomalyItems.length} 项数据问题</h2></div></div><ul class="agent-unknown-list">${anomalyItems.map((item) => `<li>${escapeHTML(item)}</li>`).join("")}</ul></section>`
+    : `<section class="dashboard-section" aria-labelledby="anomaly-title"><div class="section-heading"><div><p class="eyebrow">需要先知道</p><h2 id="anomaly-title">本轮没有会改变解读的数据问题</h2></div></div></section>`;
   document.querySelector("#view-data").innerHTML = `
     <header class="page-header">
       <div><p class="eyebrow">每个数字从哪来</p><h1 id="data-title">${status.total_metric_count} 条核心指标，${data.sources.length} 条来源线路</h1></div>
       <p>这里会告诉你：更新有没有成功、这次用了哪个来源、数据是不是太旧。</p>
     </header>
 
+    ${anomalyPanel}
     <section class="dashboard-section" aria-labelledby="gate-title">
       <div class="section-heading"><div><h2 id="gate-title">本次更新和长期稳定性</h2><p>一次更新成功，不代表数据通道已经完成连续观察。</p></div></div>
       <div class="status-split-grid">
@@ -2703,6 +2758,9 @@ function bindOverviewInteractions() {
       document.querySelectorAll(".trend-range-button").forEach((item) => item.setAttribute("aria-pressed", String(item === button)));
       const rangeId = button.dataset.range || "1y";
       if (rangeId === "1y" && proxy?.trend?.length) {
+        const previous = state.seriesRequests.get(mainChart);
+        if (previous) previous.controller.abort();
+        state.seriesRequests.delete(mainChart);
         drawChart(mainChart, proxy.trend, proxy, rangeId);
         return;
       }
@@ -2745,6 +2803,37 @@ function bindLedgerInteractions() {
 function applyLedgerFilter() {
   document.querySelectorAll(".metric-disclosure").forEach((details) => {
     details.hidden = state.ledgerFilter !== "all" && details.dataset.group !== state.ledgerFilter;
+  });
+}
+
+function openEvidenceMetric(metricId, evidenceLink = null) {
+  if (!metricId) return;
+  state.ledgerFilter = "all";
+  setView("ledger", true);
+  requestAnimationFrame(() => {
+    const details = [...document.querySelectorAll("#view-ledger .metric-disclosure")]
+      .find((item) => item.dataset.metricId === metricId);
+    if (!details) {
+      elements.live.textContent = "这条证据当前没有可展开的指标详情";
+      return;
+    }
+    details.hidden = false;
+    details.open = true;
+    const analysisId = evidenceLink?.dataset.evidenceAnalysis;
+    const evidenceDate = evidenceLink?.dataset.evidenceDate;
+    const windowId = evidenceLink?.dataset.evidenceWindow;
+    const note = [analysisId ? `分析 ${analysisId}` : "", evidenceDate ? `证据日期 ${evidenceDate}` : "", windowId ? `对比窗口 ${CHANGE_LABELS[windowId] || windowId}` : ""].filter(Boolean).join(" · ");
+    let evidenceMeta = details.querySelector(".evidence-context-note");
+    if (note) {
+      if (!evidenceMeta) {
+        evidenceMeta = document.createElement("p");
+        evidenceMeta.className = "evidence-context-note";
+        details.querySelector(".metric-detail")?.prepend(evidenceMeta);
+      }
+      evidenceMeta.textContent = `你从 Agent 证据进入：${note}。下方数值为当前发布版，若日期不同，以上述证据日期为准。`;
+    }
+    details.scrollIntoView({behavior: "smooth", block: "start"});
+    details.querySelector("summary")?.focus({preventScroll: true});
   });
 }
 
@@ -2845,14 +2934,16 @@ function pointsWithinDays(rawPoints, days) {
   const latest = Date.parse(`${points.at(-1).observed_at.slice(0, 10)}T00:00:00Z`);
   const cutoff = latest - days * 86_400_000;
   const recent = points.filter((point) => Date.parse(`${point.observed_at.slice(0, 10)}T00:00:00Z`) >= cutoff);
+  const labels = {31: "过去一个月", 93: "过去三个月", 366: "过去一年", 1827: "过去五年"};
   return recent.length >= 2
-    ? { points: recent, label: "过去一个月" }
+    ? { points: recent, label: labels[days] || `过去 ${days} 天` }
     : { points: points.slice(-8), label: "最近几次" };
 }
 
 function drawMiniChart(container, rawPoints, metric, periodLabel = "过去一年") {
   if (!container) return;
-  const points = downsample((rawPoints || []).filter((point) => numericOrNull(point.value) !== null), 120);
+  const segments = chartSegments(rawPoints, metric);
+  const points = segments.flatMap((segment) => downsample(segment, Math.max(8, Math.floor(120 / Math.max(1, segments.length)))).map((point, index) => ({...point, _segmentStart: index === 0})));
   if (points.length < 2) {
     container.innerHTML = `<span class="mini-chart-empty">历史不足</span>`;
     return;
@@ -2876,7 +2967,7 @@ function drawMiniChart(container, rawPoints, metric, periodLabel = "过去一年
     const y = padding + (maximum - Number(point.value)) / (maximum - minimum) * (height - padding * 2);
     return [x, y];
   });
-  const path = coordinates.map(([x, y], index) => `${index === 0 ? "M" : "L"}${x.toFixed(2)} ${y.toFixed(2)}`).join(" ");
+  const path = coordinates.map(([x, y], index) => `${points[index]._segmentStart ? "M" : "L"}${x.toFixed(2)} ${y.toFixed(2)}`).join(" ");
   const last = coordinates.at(-1);
   const label = `${metric?.short_label || "指标"}${periodLabel}，从 ${chartAxisValue(values[0], metric)} 变为 ${chartAxisValue(values.at(-1), metric)}`;
   container.innerHTML = `
@@ -3189,6 +3280,13 @@ document.querySelectorAll(".primary-nav a, .brand").forEach((link) => {
     event.preventDefault();
     setView(view, true, {announce: true, focusHeading: event.detail === 0});
   });
+});
+
+document.addEventListener("click", (event) => {
+  const link = event.target.closest("[data-evidence-metric]");
+  if (!link) return;
+  event.preventDefault();
+  openEvidenceMetric(link.dataset.evidenceMetric, link);
 });
 
 window.addEventListener("hashchange", () => setView(currentHashView(), false, {announce: true}));

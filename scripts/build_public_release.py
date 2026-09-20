@@ -231,6 +231,25 @@ def build_release(source_root: Path, output_root: Path) -> dict[str, Any]:
                     / context_run.name,
                 )
 
+        # Bind every API response and evidence link to the complete public
+        # bundle, not only to the macro snapshot.  Optional channels, Agent
+        # analysis, and frontend code therefore create a new release identity.
+        release_basis = file_inventory(output_root)
+        release_sha256 = hashlib.sha256(
+            json.dumps(release_basis, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
+        release_id = f"release-{release_sha256[:20]}"
+        write_json(
+            output_root / "data" / "release.json",
+            {
+                "schema_version": "1.0",
+                "release_id": release_id,
+                "release_sha256": release_sha256,
+                "snapshot_run_id": snapshot_run_id,
+                "agent_analysis_id": (analysis or {}).get("analysis_id"),
+            },
+        )
+
         dashboard = build_dashboard(output_root)
         if dashboard.get("snapshot", {}).get("run_id") != snapshot_run_id:
             raise ValueError("release snapshot does not match the source snapshot")
@@ -239,6 +258,8 @@ def build_release(source_root: Path, output_root: Path) -> dict[str, Any]:
         manifest = {
             "schema_version": "1.0",
             "built_at": utc_now(),
+            "release_id": release_id,
+            "release_sha256": release_sha256,
             "snapshot_run_id": snapshot_run_id,
             "publication_status": publication.get("status"),
             "agent_state": dashboard.get("agent_analysis", {}).get("state"),

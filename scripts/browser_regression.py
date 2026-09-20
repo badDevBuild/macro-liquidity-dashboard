@@ -27,42 +27,88 @@ def main() -> int:
                 f"mobile page overflows horizontally: {scroll_width}>{viewport_width}"
             )
 
-        race_result = page.evaluate(
+        # Reproduce the real homepage path: a slow network-backed 3m request,
+        # immediately followed by the locally cached 1y selection.  The late
+        # 3m response must not overwrite the visible 1y chart.
+        click_race_result = page.evaluate(
             """async () => {
-              const release = (await (await fetch('api/dashboard')).json()).release_id;
+              const release = state.data.release_id;
               const original = window.fetch;
               window.fetch = (url, options = {}) => {
-                if (!String(url).includes('api/series')) return original(url, options);
-                const range = new URL(url, location.href).searchParams.get('range');
-                const delay = range === '1y' ? 120 : 10;
-                const value = range === '1y' ? 111 : 222;
+                if (!String(url).includes('api/series') || !String(url).includes('range=3m')) return original(url, options);
                 return new Promise((resolve, reject) => {
                   const timer = setTimeout(() => resolve(new Response(JSON.stringify({
                     release_id: release,
                     points: [
-                      {observed_at: '2026-01-01', value: 0},
-                      {observed_at: '2026-01-02', value}
+                      {observed_at: '2099-01-01', value: 1},
+                      {observed_at: '2099-01-02', value: 999999}
                     ]
-                  }), {status: 200, headers: {'Content-Type': 'application/json'}})), delay);
+                  }), {status: 200, headers: {'Content-Type': 'application/json'}})), 120);
                   options.signal?.addEventListener('abort', () => {
                     clearTimeout(timer);
                     reject(new DOMException('Aborted', 'AbortError'));
                   });
                 });
               };
-              const container = document.createElement('div');
-              container.className = 'chart-shell';
-              container.style.width = '360px';
-              document.body.append(container);
-              loadSeries('tga_daily', '1y', container);
+              document.querySelector('.trend-range-button[data-range="3m"]').click();
               await new Promise(resolve => setTimeout(resolve, 5));
-              await loadSeries('tga_daily', '1m', container);
-              await new Promise(resolve => setTimeout(resolve, 150));
-              return container.querySelector('circle title')?.textContent;
+              document.querySelector('.trend-range-button[data-range="1y"]').click();
+              await new Promise(resolve => setTimeout(resolve, 160));
+              return {
+                selected: document.querySelector('.trend-range-button[data-range="1y"]').getAttribute('aria-pressed'),
+                title: document.querySelector('[data-main-chart] circle title')?.textContent || ''
+              };
             }"""
         )
-        if race_result != "1月2日：2.2 亿美元":
-            raise AssertionError(f"stale series response won the race: {race_result!r}")
+        if click_race_result["selected"] != "true" or "2099" in click_race_result["title"]:
+            raise AssertionError(f"real range buttons allowed a stale response to win: {click_race_result!r}")
+
+        curve_states = page.evaluate(
+            """() => ({
+              missing: treasuryCurvePanel({treasury_curve: {spreads: {spread_10y_2y: {label: '10Y-2Y', value: null, available_for_analysis: false, quality_status: 'unavailable'}}}}),
+              stale: treasuryCurvePanel({treasury_curve: {spreads: {spread_10y_2y: {label: '10Y-2Y', value: 10, observed_at: '2026-01-01', available_for_analysis: false, quality_status: 'stale_fallback'}}}}),
+              current: treasuryCurvePanel({treasury_curve: {spreads: {spread_10y_2y: {label: '10Y-2Y', value: 10, observed_at: '2026-09-20', available_for_analysis: true, quality_status: 'fresh_network'}}}})
+            })"""
+        )
+        if "不判断是否倒挂" not in curve_states["missing"]:
+            raise AssertionError("missing curve spread was not rendered as unknown")
+        if "不代表当前状态" not in curve_states["stale"]:
+            raise AssertionError("stale curve spread was presented as current")
+        if "当前未倒挂" not in curve_states["current"]:
+            raise AssertionError("current positive curve spread was not rendered correctly")
+
+        evidence_result = page.evaluate(
+            """async () => {
+              let link = document.querySelector('[data-evidence-metric]');
+              if (!link) {
+                link = document.createElement('a');
+                link.href = '#ledger';
+                link.dataset.evidenceMetric = 'tga_daily';
+                link.dataset.evidenceDate = '2026-09-17';
+                link.textContent = '证据测试';
+                document.body.append(link);
+              }
+              const metricId = link.dataset.evidenceMetric;
+              link.click();
+              await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+              const detail = [...document.querySelectorAll('#view-ledger .metric-disclosure')]
+                .find(item => item.dataset.metricId === metricId);
+              return {
+                available: true,
+                hash: location.hash,
+                open: Boolean(detail?.open),
+                metricId,
+                scrollWidth: document.documentElement.scrollWidth,
+                viewportWidth: innerWidth
+              };
+            }"""
+        )
+        if evidence_result.get("available") and (
+            evidence_result["hash"] != "#ledger"
+            or not evidence_result["open"]
+            or evidence_result["scrollWidth"] > evidence_result["viewportWidth"] + 2
+        ):
+            raise AssertionError(f"evidence drill-down failed: {evidence_result!r}")
 
         cache_result = page.evaluate(
             """async () => {
@@ -79,10 +125,23 @@ def main() -> int:
         if not cache_result["kept"] or "another-app-cache" not in cache_result["keys"]:
             raise AssertionError("service worker deleted another app's cache")
 
+        responsive_checks = []
+        for width, height in ((320, 700), (844, 390)):
+            page.set_viewport_size({"width": width, "height": height})
+            page.wait_for_timeout(250)
+            measured = page.evaluate("({document: document.documentElement.scrollWidth, viewport: innerWidth})")
+            if measured["document"] > measured["viewport"] + 2:
+                raise AssertionError(f"responsive overflow at {width}x{height}: {measured!r}")
+            responsive_checks.append(f"{width}x{height}")
+
         result = {
             "status": "passed",
             "mobile_width": {"document": scroll_width, "viewport": viewport_width},
             "range_race": "latest_selection_won",
+            "real_range_click_race": "local_1y_selection_won",
+            "curve_missing_state": "unknown_not_non_inverted",
+            "evidence_drill_down": "opened_matching_metric",
+            "responsive_viewports": responsive_checks,
             "foreign_cache": "preserved",
         }
         print(json.dumps(result, ensure_ascii=False, indent=2))

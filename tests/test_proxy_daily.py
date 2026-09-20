@@ -5,6 +5,7 @@ import sys
 import unittest
 from unittest.mock import patch
 from pathlib import Path
+from datetime import date, timedelta
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from liquidity_dashboard.model import _proxy_history, _proxy_view
@@ -74,6 +75,31 @@ class DailyProxyTests(unittest.TestCase):
 
     def test_missing_latest_component_does_not_fallback_to_week_change(self):
         self.assertIsNone(_proxy_view(self.metrics, self.history())["latest_release_change"])
+
+    def test_default_trend_is_one_calendar_year_not_366_observations(self):
+        start = date(2024, 1, 1)
+        history = []
+        for index in range(500):
+            observed = start + timedelta(days=index * 2)
+            history.append({
+                "observed_at": observed.isoformat(),
+                "value": 1_000 + index,
+                "component_values": {
+                    "fed_total_assets": 2_000,
+                    "tga_daily": 500,
+                    "overnight_rrp": 0.5,
+                },
+                "component_dates": {},
+            })
+        metrics = {
+            metric_id: {"available_for_analysis": True, "quality_status": "fresh_network"}
+            for metric_id in ("fed_total_assets", "tga_daily", "overnight_rrp")
+        }
+        view = _proxy_view(metrics, history)
+        latest = date.fromisoformat(history[-1]["observed_at"])
+        first = date.fromisoformat(view["trend"][0]["observed_at"])
+        self.assertLessEqual((latest - first).days, 366)
+        self.assertLess(len(view["trend"]), 366)
 
     def test_method_migration_is_not_reported_as_market_flow(self):
         old = {"id": "net_liquidity_proxy_weekly", "value": 7000, "observed_at": "2026-08-26"}

@@ -1200,9 +1200,19 @@ main {
 
 .trust-stats {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
   gap: var(--space-md);
   padding-top: var(--space-md);
+}
+
+.evidence-context-note {
+  margin: 0 0 var(--space-md);
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-sm);
+  background: var(--color-accent-soft);
+  color: var(--color-text-soft);
+  font-size: var(--text-xs);
+  line-height: 1.65;
 }
 
 .trust-stat {
@@ -1831,19 +1841,13 @@ main {
 }
 
 .flow-map::before {
-  position: absolute;
-  top: 2rem;
-  bottom: 2rem;
-  left: 1rem;
-  width: 1px;
-  background: var(--color-border-strong);
-  content: "";
+  display: none;
 }
 
 .flow-step {
   position: relative;
   display: grid;
-  grid-template-columns: 2rem minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-md);
   scroll-margin-top: 9rem;
 }
@@ -3933,7 +3937,7 @@ details[open] .disclosure-chevron {
   }
 
   .flow-step {
-    grid-template-columns: 2rem minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .flow-panel {

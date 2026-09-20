@@ -1548,7 +1548,18 @@ def _proxy_view(
     else:
         direction = "flat"
         headline = "按这组账本数据看，这周几乎没变"
-    trend = history[-366:]
+    # A one-year view is a calendar window, not an arbitrary number of
+    # observations.  Daily series can contain weekends, revisions, or gaps.
+    if history:
+        latest_date = _parse_date(history[-1]["observed_at"])
+        one_year_cutoff = latest_date - timedelta(days=366)
+        trend = [
+            point
+            for point in history
+            if _parse_date(point["observed_at"]) >= one_year_cutoff
+        ]
+    else:
+        trend = []
     components_available = all(
         metrics.get(key, {}).get("available_for_analysis") is True for key in keys
     )
@@ -2207,13 +2218,21 @@ def build_dashboard(root: Path, *, now: datetime | None = None) -> dict[str, Any
     runtime_eligible_count = sum(
         metric.get("available_for_analysis") is True for metric in metric_views.values()
     )
+    # Completeness and analysis eligibility are separate.  A degradable
+    # publication may still be safe to analyse, but it must never be labelled
+    # as fully complete.
+    publication_status = publication.get("status")
     data_status_code = (
         "stale"
         if runtime_stale
+        else "degraded"
+        if publication_status == "publish_degraded" or runtime_eligible_count < len(metric_views)
         else "ready"
         if runtime_analysis_allowed
         else "degraded"
     )
+    release_meta = _load_json(root / "data" / "release.json")
+    release_id = str(release_meta.get("release_id") or snapshot.get("run_id") or "")
     proxy = _proxy_view(metric_views, proxy_history)
     agent_analysis = load_agent_analysis(
         root,
@@ -2224,7 +2243,7 @@ def build_dashboard(root: Path, *, now: datetime | None = None) -> dict[str, Any
     )
     return {
         "schema_version": "2.7",
-        "release_id": snapshot.get("run_id"),
+        "release_id": release_id,
         "generated_at": _iso_now(now),
         "snapshot": {
             "run_id": snapshot.get("run_id"),
@@ -2246,6 +2265,8 @@ def build_dashboard(root: Path, *, now: datetime | None = None) -> dict[str, Any
                 "code": data_status_code,
                 "runtime_eligible_metric_count": runtime_eligible_count,
                 "runtime_stale_metric_count": len(runtime_stale),
+                "publication_status": publication_status,
+                "analysis_eligible": runtime_analysis_allowed,
                 "checked_at": _iso_now(now),
             },
             "coverage_ratio": publication.get("coverage_ratio", 0),
@@ -2696,8 +2717,9 @@ def build_series(root: Path, metric_id: str, range_id: str = "3m") -> dict[str, 
     root = root.resolve()
     payload = _build_series(root, metric_id, range_id)
     snapshot = _load_json(root / "data" / "snapshots" / "latest.json")
+    release_meta = _load_json(root / "data" / "release.json")
     return {
         **payload,
-        "release_id": snapshot.get("run_id"),
+        "release_id": release_meta.get("release_id") or snapshot.get("run_id"),
         "snapshot_run_id": snapshot.get("run_id"),
     }

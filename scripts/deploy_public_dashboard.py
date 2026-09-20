@@ -219,6 +219,7 @@ def deploy(config_path: Path) -> dict[str, Any]:
         status.update(
             {
                 "release_id": release_id,
+                "content_release_id": manifest.get("release_id"),
                 "snapshot_run_id": manifest["snapshot_run_id"],
                 "agent_state": manifest.get("agent_state"),
                 "agent_analysis_id": manifest.get("agent_analysis_id"),
@@ -271,6 +272,8 @@ def deploy(config_path: Path) -> dict[str, Any]:
             dashboard = json.loads(dashboard_body)
             if dashboard.get("snapshot", {}).get("run_id") != snapshot_run_id:
                 raise RuntimeError("public dashboard is serving a different snapshot")
+            if dashboard.get("release_id") != manifest.get("release_id"):
+                raise RuntimeError("public dashboard is serving a different content release")
             html, content_type = http_bytes(base_url)
             if b"<title>" not in html or content_type != "text/html":
                 raise RuntimeError("public dashboard HTML is invalid")
