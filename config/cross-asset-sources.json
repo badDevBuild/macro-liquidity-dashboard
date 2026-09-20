@@ -1,0 +1,87 @@
+{
+  "schema_version": "1.0",
+  "history_days": 1900,
+  "overlap_days": 10,
+  "request_pause_seconds": 0.12,
+  "request_policy": {
+    "connect_timeout_seconds": 6,
+    "timeout_seconds": 25,
+    "max_attempts": 2,
+    "base_backoff_seconds": 1.0,
+    "curl_user_agent": "macro-liquidity-dashboard/0.1 cross-asset-monitor"
+  },
+  "coinbase": {
+    "base_url": "https://api.exchange.coinbase.com",
+    "granularity_seconds": 3600,
+    "chunk_hours": 288,
+    "close_timezone": "America/New_York",
+    "close_hour": 16,
+    "sources": [
+      {
+        "id": "coinbase_btc_usd",
+        "series_id": "btc_usd",
+        "product_id": "BTC-USD",
+        "name": "Coinbase Exchange BTC-USD",
+        "source_owner": "Coinbase",
+        "authority": "official_primary",
+        "cadence": "us_market_close_daily",
+        "documentation_url": "https://docs.cdp.coinbase.com/exchange/reference/exchangerestapi_getproductcandles",
+        "freshness_max_days": 2,
+        "cache_max_days": 3,
+        "max_close_staleness_hours": 0
+      },
+      {
+        "id": "coinbase_paxg_usd",
+        "series_id": "paxg_usd",
+        "product_id": "PAXG-USD",
+        "name": "Coinbase Exchange PAXG-USD",
+        "source_owner": "Coinbase",
+        "authority": "official_primary",
+        "cadence": "us_market_close_daily",
+        "documentation_url": "https://docs.cdp.coinbase.com/exchange/reference/exchangerestapi_getproductcandles",
+        "freshness_max_days": 2,
+        "cache_max_days": 3,
+        "max_close_staleness_hours": 8
+      }
+    ]
+  },
+  "sp500": {
+    "id": "fred_sp500",
+    "series_id": "SP500",
+    "series_key": "sp500",
+    "name": "FRED S&P 500",
+    "source_owner": "Federal Reserve Bank of St. Louis / S&P Dow Jones Indices",
+    "authority": "official_republisher",
+    "cadence": "business_daily",
+    "url_template": "https://fred.stlouisfed.org/graph/fredgraph.csv?id=SP500&cosd={start_date}",
+    "documentation_url": "https://fred.stlouisfed.org/series/SP500",
+    "primary_timeout_seconds": 15,
+    "freshness_max_days": 5,
+    "cache_max_days": 7,
+    "fallback": {
+      "id": "yahoo_sp500",
+      "series_id": "sp500",
+      "series_key": "sp500",
+      "name": "Yahoo Finance S&P 500",
+      "source_owner": "Yahoo Finance",
+      "authority": "trusted_aggregator",
+      "cadence": "business_daily",
+      "url_template": "https://query1.finance.yahoo.com/v8/finance/chart/%5EGSPC?period1={period1}&period2={period2}&interval=1d&events=history",
+      "documentation_url": "https://finance.yahoo.com/quote/%5EGSPC/history/",
+      "freshness_max_days": 5,
+      "cache_max_days": 7
+    }
+  },
+  "broad_dollar": {
+    "id": "fred_broad_dollar_local",
+    "series_id": "broad_dollar_index",
+    "series_key": "broad_dollar_index",
+    "name": "美联储广义美元指数（FRED 转发）",
+    "source_owner": "Board of Governors / FRED",
+    "authority": "official_republisher",
+    "cadence": "daily_observations_weekly_release",
+    "documentation_url": "https://fred.stlouisfed.org/series/DTWEXBGS",
+    "freshness_max_days": 9,
+    "cache_max_days": 14
+  }
+}

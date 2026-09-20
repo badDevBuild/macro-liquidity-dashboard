@@ -1,0 +1,9 @@
+[project]
+name = "macro-liquidity-dashboard"
+version = "0.1.0"
+description = "Auditable official-data channel and mobile-first macro liquidity dashboard"
+requires-python = ">=3.11"
+dependencies = []
+
+[tool.unittest]
+start-directory = "tests"

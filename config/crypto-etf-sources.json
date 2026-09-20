@@ -1,0 +1,53 @@
+{
+  "schema_version": "1.0",
+  "credential": {
+    "env_var": "SOSOVALUE_API_KEY",
+    "keychain_service": "macro-liquidity-sosovalue"
+  },
+  "request_policy": {
+    "connect_timeout_seconds": 6,
+    "timeout_seconds": 25,
+    "max_attempts": 2,
+    "base_backoff_seconds": 1.0,
+    "curl_user_agent": "macro-liquidity-dashboard/0.1 crypto-etf-monitor"
+  },
+  "source": {
+    "id": "sosovalue_us_crypto_etf",
+    "name": "SoSoValue 美国加密现货 ETF",
+    "source_owner": "SoSoValue",
+    "authority": "trusted_aggregator",
+    "cadence": "us_trading_day_t_plus_1",
+    "base_url": "https://openapi.sosovalue.com/openapi/v1",
+    "summary_history_path": "/etfs/summary-history",
+    "documentation_url": "https://sosovalue.gitbook.io/soso-value-api-doc/2.-etf/summary-history",
+    "freshness_max_calendar_days": 5,
+    "cache_max_calendar_days": 5,
+    "request_limit": 50,
+    "country_code": "US",
+    "assets": [
+      {"symbol": "BTC", "label": "Bitcoin"},
+      {"symbol": "ETH", "label": "Ethereum"},
+      {"symbol": "SOL", "label": "Solana"}
+    ]
+  },
+  "cross_checks": [
+    {
+      "id": "farside_btc",
+      "asset": "BTC",
+      "mode": "manual_optional",
+      "url": "https://farside.co.uk/bitcoin-etf-flow-all-data/"
+    },
+    {
+      "id": "farside_eth",
+      "asset": "ETH",
+      "mode": "manual_optional",
+      "url": "https://farside.co.uk/ethereum-etf-flow-all-data/"
+    },
+    {
+      "id": "farside_sol",
+      "asset": "SOL",
+      "mode": "manual_optional",
+      "url": "https://farside.co.uk/sol/"
+    }
+  ]
+}

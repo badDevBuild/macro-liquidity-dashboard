@@ -1,0 +1,247 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://macro-liquidity.local/schemas/agent-analysis-v1.5.json",
+  "title": "Macro liquidity Agent analysis",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "prompt_version",
+    "analysis_id",
+    "snapshot_run_id",
+    "context_bundle_id",
+    "generated_at",
+    "model",
+    "status",
+    "overall_assessment",
+    "confidence",
+    "headline",
+    "summary",
+    "market_bottom_line",
+    "daily_update",
+    "layer_analysis",
+    "market_implications",
+    "drivers",
+    "contradictions",
+    "watch_items",
+    "context_screening_note",
+    "context_assessments",
+    "unknowns",
+    "data_quality_note"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "const": "1.5" },
+    "prompt_version": { "type": "string", "minLength": 1 },
+    "analysis_id": { "type": "string", "minLength": 1 },
+    "snapshot_run_id": { "type": "string", "minLength": 1 },
+    "context_bundle_id": { "type": "string", "minLength": 1 },
+    "generated_at": { "type": "string", "format": "date-time" },
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "id", "reasoning_effort"],
+      "properties": {
+        "provider": { "type": "string", "minLength": 1 },
+        "id": { "type": "string", "minLength": 1 },
+        "reasoning_effort": { "type": "string", "minLength": 1 }
+      }
+    },
+    "status": {
+      "type": "string",
+      "enum": ["ready", "insufficient_evidence"]
+    },
+    "overall_assessment": {
+      "type": "string",
+      "enum": ["easing", "tightening", "mixed", "uncertain"]
+    },
+    "confidence": {
+      "type": "string",
+      "enum": ["low", "medium", "high"]
+    },
+    "headline": { "type": "string", "minLength": 1, "maxLength": 48 },
+    "summary": { "type": "string", "minLength": 1, "maxLength": 360 },
+    "market_bottom_line": { "type": "string", "minLength": 1, "maxLength": 240 },
+    "daily_update": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "headline", "summary", "market_expectation_note", "evidence"],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["new_data", "no_official_updates", "partial_update", "comparison_unavailable"]
+        },
+        "headline": { "type": "string", "minLength": 1, "maxLength": 36 },
+        "summary": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "market_expectation_note": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "evidence": {
+          "type": "array",
+          "maxItems": 8,
+          "items": { "$ref": "#/$defs/evidence" }
+        }
+      }
+    },
+    "layer_analysis": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "items": { "$ref": "#/$defs/layerAnalysis" }
+    },
+    "market_implications": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["equities", "crypto"],
+      "properties": {
+        "equities": { "$ref": "#/$defs/marketImplication" },
+        "crypto": { "$ref": "#/$defs/marketImplication" }
+      }
+    },
+    "drivers": {
+      "type": "array",
+      "maxItems": 5,
+      "items": { "$ref": "#/$defs/evidencedClaim" }
+    },
+    "contradictions": {
+      "type": "array",
+      "maxItems": 4,
+      "items": { "$ref": "#/$defs/evidencedClaim" }
+    },
+    "watch_items": {
+      "type": "array",
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["trigger", "why", "metric_ids"],
+        "properties": {
+          "trigger": { "type": "string", "minLength": 1, "maxLength": 160 },
+          "why": { "type": "string", "minLength": 1, "maxLength": 240 },
+          "metric_ids": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    },
+    "context_screening_note": { "type": "string", "minLength": 1, "maxLength": 240 },
+    "context_assessments": {
+      "type": "array",
+      "maxItems": 12,
+      "items": { "$ref": "#/$defs/contextAssessment" }
+    },
+    "unknowns": {
+      "type": "array",
+      "maxItems": 4,
+      "items": { "type": "string", "minLength": 1, "maxLength": 240 }
+    },
+    "data_quality_note": { "type": "string", "minLength": 1, "maxLength": 300 }
+  },
+  "$defs": {
+    "contextAssessment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["context_id", "relevance", "content_basis", "what_happened", "transmission", "reason", "linked_metric_ids"],
+      "properties": {
+        "context_id": { "type": "string", "minLength": 1 },
+        "relevance": {
+          "type": "string",
+          "enum": ["relevant", "watch", "already_reflected"]
+        },
+        "content_basis": {
+          "type": "string",
+          "enum": ["full_text", "summary", "official_schedule", "title_only", "fetch_error"]
+        },
+        "what_happened": { "type": "string", "minLength": 1, "maxLength": 300 },
+        "transmission": { "type": "string", "minLength": 1, "maxLength": 300 },
+        "reason": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "linked_metric_ids": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "layerAnalysis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["layer", "assessment", "conclusion", "evidence"],
+      "properties": {
+        "layer": {
+          "type": "string",
+          "enum": ["balance_sheet_liquidity", "funding_and_rates", "dollar_and_financial_conditions", "risk_asset_transmission"]
+        },
+        "assessment": {
+          "type": "string",
+          "enum": ["easing", "tightening", "mixed", "uncertain"]
+        },
+        "conclusion": { "type": "string", "minLength": 1, "maxLength": 180 },
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 6,
+          "items": { "$ref": "#/$defs/evidence" }
+        }
+      }
+    },
+    "marketImplication": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bias", "conclusion", "transmission", "confirm_metric_ids", "invalidate_metric_ids"],
+      "properties": {
+        "bias": { "type": "string", "enum": ["tailwind", "headwind", "mixed", "uncertain"] },
+        "conclusion": { "type": "string", "minLength": 1, "maxLength": 260 },
+        "transmission": { "type": "string", "minLength": 1, "maxLength": 320 },
+        "confirm_metric_ids": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 6,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "invalidate_metric_ids": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 6,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "evidencedClaim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["claim", "effect", "evidence"],
+      "properties": {
+        "claim": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "effect": {
+          "type": "string",
+          "enum": ["supportive", "draining", "mixed", "neutral"]
+        },
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 6,
+          "items": { "$ref": "#/$defs/evidence" }
+        }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "metric_id",
+        "observed_at",
+        "value",
+        "comparison_window",
+        "change"
+      ],
+      "properties": {
+        "metric_id": { "type": "string", "minLength": 1 },
+        "observed_at": { "type": ["string", "null"] },
+        "value": { "type": "number" },
+        "comparison_window": {
+          "type": ["string", "null"],
+          "enum": ["since_previous_run", "latest_release", "1d", "1w", "1m", "3m", "1y", null]
+        },
+        "change": { "type": ["number", "null"] }
+      }
+    }
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "name": "宏观流动性观测台",
+  "short_name": "流动性",
+  "description": "可审计的宏观流动性晨间看板",
+  "start_url": "./#overview",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f2f7f4",
+  "theme_color": "#f2f7f4",
+  "lang": "zh-CN",
+  "icons": [
+    {
+      "src": "assets/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

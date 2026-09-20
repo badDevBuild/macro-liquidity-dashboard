@@ -1,0 +1,7 @@
+{
+  "schema_version": "1.0",
+  "approved": false,
+  "reviewed_at": null,
+  "reviewed_by": null,
+  "review_note": "至少完成 14 个不同观测日的影子运行和语义复核后，才允许人工批准生产发布。"
+}

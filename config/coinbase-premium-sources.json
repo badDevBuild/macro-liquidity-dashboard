@@ -1,0 +1,13 @@
+{
+  "schema_version": "1.0",
+  "history_days": 366,
+  "chunk_hours": 240,
+  "overlap_hours": 48,
+  "max_age_hours": 30,
+  "request_policy": {"connect_timeout_seconds": 6, "timeout_seconds": 25, "max_attempts": 2, "base_backoff_seconds": 1},
+  "sources": [
+    {"id": "coinbase_btc_usd", "name": "Coinbase BTC/USD", "venue": "coinbase", "symbol": "BTC-USD", "base_url": "https://api.exchange.coinbase.com", "url": "https://docs.cdp.coinbase.com/api-reference/exchange-api/rest-api/products/get-product-candles"},
+    {"id": "binance_btc_usdt", "name": "Binance BTC/USDT 现货", "venue": "binance", "symbol": "BTCUSDT", "base_url": "https://data-api.binance.vision", "url": "https://developers.binance.com/docs/binance-spot-api-docs/rest-api/market-data-endpoints"},
+    {"id": "coinbase_usdt_usd", "name": "Coinbase USDT/USD", "venue": "coinbase", "symbol": "USDT-USD", "base_url": "https://api.exchange.coinbase.com", "url": "https://docs.cdp.coinbase.com/api-reference/exchange-api/rest-api/products/get-product-candles"}
+  ]
+}

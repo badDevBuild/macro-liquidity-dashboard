@@ -1,0 +1,61 @@
+{
+  "schema_version": "1.0",
+  "request_policy": {
+    "connect_timeout_seconds": 6,
+    "timeout_seconds": 20,
+    "max_attempts": 2,
+    "base_backoff_seconds": 0.75,
+    "curl_user_agent": "macro-liquidity-dashboard/0.1 crypto-derivatives-monitor"
+  },
+  "freshness_max_minutes": 30,
+  "signal_freshness_max_minutes": 120,
+  "cache_max_minutes": 180,
+  "minimum_venues": 2,
+  "history_max_days": 400,
+  "assets": {
+    "BTC": {
+      "label": "Bitcoin",
+      "symbols": {
+        "binance": "BTCUSDT",
+        "okx": "BTC-USDT-SWAP",
+        "bybit": "BTCUSDT"
+      },
+      "price_range_usd": [100, 10000000]
+    },
+    "ETH": {
+      "label": "Ethereum",
+      "symbols": {
+        "binance": "ETHUSDT",
+        "okx": "ETH-USDT-SWAP",
+        "bybit": "ETHUSDT"
+      },
+      "price_range_usd": [10, 1000000]
+    },
+    "SOL": {
+      "label": "Solana",
+      "symbols": {
+        "binance": "SOLUSDT",
+        "okx": "SOL-USDT-SWAP",
+        "bybit": "SOLUSDT"
+      },
+      "price_range_usd": [0.1, 100000]
+    }
+  },
+  "venues": {
+    "binance": {
+      "name": "Binance",
+      "authority": "official_primary",
+      "documentation_url": "https://developers.binance.com/docs/derivatives/usds-margined-futures/market-data/rest-api"
+    },
+    "okx": {
+      "name": "OKX",
+      "authority": "official_primary",
+      "documentation_url": "https://www.okx.com/docs-v5/en/#public-data-rest-api-get-open-interest"
+    },
+    "bybit": {
+      "name": "Bybit",
+      "authority": "official_primary",
+      "documentation_url": "https://bybit-exchange.github.io/docs/v5/market/tickers"
+    }
+  }
+}

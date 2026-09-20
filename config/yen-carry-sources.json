@@ -1,0 +1,83 @@
+{
+  "schema_version": "1.0",
+  "history_days": 1900,
+  "overlap_days": 45,
+  "cftc_history_years": 5,
+  "request_policy": {
+    "connect_timeout_seconds": 6,
+    "timeout_seconds": 35,
+    "max_attempts": 2,
+    "base_backoff_seconds": 1.0,
+    "curl_user_agent": "macro-liquidity-dashboard/0.1 yen-carry-monitor"
+  },
+  "ecb_fx": {
+    "id": "ecb_usd_jpy_cross",
+    "series_id": "usd_jpy",
+    "name": "ECB USD/JPY 参考汇率交叉盘",
+    "source_owner": "European Central Bank",
+    "authority": "official_primary",
+    "cadence": "business_daily",
+    "url_template": "https://data-api.ecb.europa.eu/service/data/EXR/D.USD+JPY.EUR.SP00.A?startPeriod={start_date}&format=csvdata",
+    "documentation_url": "https://data.ecb.europa.eu/help/api/data",
+    "freshness_max_days": 5,
+    "cache_max_days": 8
+  },
+  "boj": {
+    "base_url": "https://www.stat-search.boj.or.jp/api/v1/getDataCode",
+    "documentation_url": "https://www.stat-search.boj.or.jp/info/api_manual_en.pdf",
+    "sources": [
+      {
+        "id": "boj_uncollateralized_call_rate",
+        "series_id": "boj_call_rate",
+        "database": "FM01",
+        "code": "STRDCLUCON",
+        "name": "日本无担保隔夜拆借利率",
+        "source_owner": "Bank of Japan",
+        "authority": "official_primary",
+        "cadence": "business_daily",
+        "freshness_max_days": 6,
+        "cache_max_days": 9
+      },
+      {
+        "id": "boj_usd_jpy_swap_turnover",
+        "series_id": "fx_swap_turnover",
+        "database": "FM08",
+        "code": "FXERD07",
+        "name": "东京市场美元兑日元掉期成交额",
+        "source_owner": "Bank of Japan",
+        "authority": "official_primary",
+        "cadence": "business_daily",
+        "freshness_max_days": 6,
+        "cache_max_days": 9
+      }
+    ]
+  },
+  "cftc": {
+    "id": "cftc_jpy_tff",
+    "series_id": "cftc_leveraged_net_short",
+    "name": "CFTC 日元杠杆基金净空仓",
+    "source_owner": "U.S. Commodity Futures Trading Commission",
+    "authority": "official_primary",
+    "cadence": "weekly",
+    "contract_code": "097741",
+    "url_template": "https://www.cftc.gov/files/dea/history/fut_fin_txt_{year}.zip",
+    "documentation_url": "https://www.cftc.gov/MarketReports/CommitmentsofTraders/HistoricalCompressed/index.htm",
+    "freshness_max_days": 12,
+    "cache_max_days": 19
+  },
+  "jsda": {
+    "id": "jsda_jgb_2y_proxy",
+    "series_id": "jgb_2y_proxy",
+    "name": "日本 2 年国债收益率代理",
+    "source_owner": "Japan Securities Dealers Association",
+    "authority": "trusted_sro",
+    "cadence": "business_daily",
+    "archive_url_template": "https://market.jsda.or.jp/en/statistics/bonds/prices/otc/archive{year}.html",
+    "csv_base_url": "https://market.jsda.or.jp/en/statistics/bonds/prices/otc/",
+    "documentation_url": "https://market.jsda.or.jp/en/statistics/bonds/prices/otc/",
+    "freshness_max_days": 8,
+    "cache_max_days": 12,
+    "minimum_remaining_days": 550,
+    "maximum_remaining_days": 910
+  }
+}

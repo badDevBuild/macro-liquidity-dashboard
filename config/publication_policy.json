@@ -1,0 +1,26 @@
+{
+  "schema_version": "1.0",
+  "minimum_fresh_metrics": 14,
+  "maximum_unavailable_metrics": 2,
+  "group_minimums": {
+    "fed_balance_sheet": 1,
+    "fiscal_cash": 1,
+    "money_market": 4,
+    "market_transmission": 5
+  },
+  "reconciliation_tolerances": {
+    "fed_total_assets": 0.5,
+    "reserve_balances_weekly_average": 0.5,
+    "effective_fed_funds_rate": 0.01
+  },
+  "eligible_quality_statuses": [
+    "fresh_network",
+    "fresh_cache"
+  ],
+  "rules": {
+    "missing_is_never_zero": true,
+    "stale_values_are_display_only": true,
+    "blocked_run_does_not_replace_latest_published_snapshot": true,
+    "every_nonfresh_metric_must_be_disclosed": true
+  }
+}

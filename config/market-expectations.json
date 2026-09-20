@@ -1,0 +1,70 @@
+{
+  "schema_version": "1.1",
+  "provider": {
+    "id": "polymarket_gamma",
+    "label": "Polymarket",
+    "authority": "prediction_market",
+    "base_url": "https://gamma-api.polymarket.com",
+    "public_url": "https://polymarket.com",
+    "documentation_url": "https://docs.polymarket.com/developers/gamma-markets-api/overview"
+  },
+  "request": {
+    "timeout_seconds": 25,
+    "max_results_per_type": 10
+  },
+  "topics": [
+    {
+      "topic_id": "fed_policy_distribution",
+      "label": "全年美联储降息次数",
+      "query": "Fed rate cuts",
+      "title_pattern": "^How many Fed rate cuts in [0-9]{4}\\?$",
+      "presentation": "distribution",
+      "policy_action": "cut",
+      "target_year": "current",
+      "require_neg_risk": true,
+      "maximum_age_hours": 36,
+      "optional": true,
+      "minimum_liquidity_usd": 10000,
+      "minimum_volume_24h_usd": 1000
+    },
+    {
+      "topic_id": "fed_hike_distribution",
+      "label": "全年美联储加息次数",
+      "query": "Fed rate hikes",
+      "title_pattern": "^How many Fed rate hikes in [0-9]{4}\\?$",
+      "presentation": "distribution",
+      "policy_action": "hike",
+      "target_year": "current",
+      "require_neg_risk": true,
+      "maximum_age_hours": 36,
+      "optional": true,
+      "minimum_liquidity_usd": 10000,
+      "minimum_volume_24h_usd": 1000
+    },
+    {
+      "topic_id": "us_inflation_distribution",
+      "label": "下一次美国年度通胀",
+      "query": "Inflation US Annual",
+      "title_pattern": "Inflation US - Annual$",
+      "presentation": "distribution",
+      "minimum_liquidity_usd": 5000,
+      "minimum_volume_24h_usd": 500
+    },
+    {
+      "topic_id": "us_recession_probability",
+      "label": "美国在年内进入衰退",
+      "query": "US recession",
+      "title_pattern": "^US recession by end of [0-9]{4}\\?$",
+      "presentation": "binary",
+      "minimum_liquidity_usd": 5000,
+      "minimum_volume_24h_usd": 100
+    }
+  ],
+  "cme_fedwatch": {
+    "label": "利率市场的美联储押注",
+    "status": "credential_required",
+    "source_name": "CME FedWatch / CME DataMine",
+    "source_url": "https://www.cmegroup.com/markets/interest-rates/cme-fedwatch-tool.html",
+    "message": "官方结构化数据需要 CME DataMine 凭证；当前不使用网页抓取，也不填入猜测值。"
+  }
+}

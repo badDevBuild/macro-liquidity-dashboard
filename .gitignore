@@ -1,0 +1,31 @@
+.DS_Store
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+
+# Runtime data and generated evidence are intentionally local-only.
+data/
+reports/
+notes-output/
+
+# Personal workspaces colocated beside this project are not part of this repo.
+journal/
+research/
+daily-market-analysis/
+btc-trader-x-learning/
+robinhood-stock-meme-monitor/
+
+# Host-specific automation and QA launchers contain local paths or addresses.
+deploy/launchd/
+ops/
+
+# Real deployment targets stay local. Commit the example instead.
+config/production-deploy.json
+config/production-known-hosts

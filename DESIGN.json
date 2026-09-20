@@ -1,0 +1,228 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-28T05:54:41Z",
+  "title": "Design System: 宏观流动性观测台",
+  "extensions": {
+    "colorMeta": {
+      "observer-green": {
+        "role": "primary",
+        "displayName": "深观测绿",
+        "canonical": "oklch(48% 0.078 166)",
+        "tonalRamp": ["oklch(18% 0.035 166)", "oklch(28% 0.055 166)", "oklch(38% 0.07 166)", "oklch(48% 0.078 166)", "oklch(60% 0.07 166)", "oklch(72% 0.058 166)", "oklch(84% 0.043 166)", "oklch(94% 0.02 166)"]
+      },
+      "observer-green-hover": {
+        "role": "primary",
+        "displayName": "深观测绿悬停",
+        "canonical": "oklch(42% 0.079 166)",
+        "tonalRamp": ["oklch(16% 0.034 166)", "oklch(25% 0.053 166)", "oklch(34% 0.068 166)", "oklch(42% 0.079 166)", "oklch(55% 0.072 166)", "oklch(68% 0.06 166)", "oklch(82% 0.042 166)", "oklch(94% 0.018 166)"]
+      },
+      "observer-wash": {
+        "role": "primary",
+        "displayName": "观测洗色",
+        "canonical": "oklch(91% 0.038 166)",
+        "tonalRamp": ["oklch(18% 0.028 166)", "oklch(30% 0.035 166)", "oklch(44% 0.04 166)", "oklch(58% 0.042 166)", "oklch(70% 0.041 166)", "oklch(80% 0.04 166)", "oklch(91% 0.038 166)", "oklch(96% 0.018 166)"]
+      },
+      "morning-mist": {
+        "role": "neutral",
+        "displayName": "晨雾",
+        "canonical": "oklch(97.4% 0.009 166)",
+        "tonalRamp": ["oklch(18% 0.009 166)", "oklch(30% 0.01 166)", "oklch(44% 0.011 166)", "oklch(58% 0.011 166)", "oklch(72% 0.01 166)", "oklch(84% 0.01 166)", "oklch(92% 0.009 166)", "oklch(97.4% 0.009 166)"]
+      },
+      "paper-surface": {
+        "role": "neutral",
+        "displayName": "纸面",
+        "canonical": "oklch(99.2% 0.004 166)",
+        "tonalRamp": ["oklch(18% 0.006 166)", "oklch(31% 0.007 166)", "oklch(45% 0.007 166)", "oklch(60% 0.007 166)", "oklch(74% 0.006 166)", "oklch(86% 0.005 166)", "oklch(94% 0.004 166)", "oklch(99.2% 0.004 166)"]
+      },
+      "quiet-mint": {
+        "role": "neutral",
+        "displayName": "静薄荷",
+        "canonical": "oklch(94.8% 0.012 166)",
+        "tonalRamp": ["oklch(18% 0.01 166)", "oklch(31% 0.012 166)", "oklch(45% 0.014 166)", "oklch(59% 0.015 166)", "oklch(72% 0.014 166)", "oklch(84% 0.013 166)", "oklch(90% 0.012 166)", "oklch(94.8% 0.012 166)"]
+      },
+      "structural-mint": {
+        "role": "neutral",
+        "displayName": "结构薄荷",
+        "canonical": "oklch(91.8% 0.017 166)",
+        "tonalRamp": ["oklch(18% 0.012 166)", "oklch(31% 0.015 166)", "oklch(44% 0.018 166)", "oklch(57% 0.019 166)", "oklch(70% 0.019 166)", "oklch(81% 0.018 166)", "oklch(88% 0.017 166)", "oklch(94% 0.012 166)"]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "观测墨",
+        "canonical": "oklch(25% 0.024 166)",
+        "tonalRamp": ["oklch(15% 0.018 166)", "oklch(25% 0.024 166)", "oklch(36% 0.024 166)", "oklch(48% 0.022 166)", "oklch(61% 0.019 166)", "oklch(74% 0.016 166)", "oklch(86% 0.011 166)", "oklch(95% 0.006 166)"]
+      },
+      "ink-soft": {
+        "role": "neutral",
+        "displayName": "柔和观测墨",
+        "canonical": "oklch(43% 0.021 166)",
+        "tonalRamp": ["oklch(16% 0.015 166)", "oklch(27% 0.02 166)", "oklch(35% 0.022 166)", "oklch(43% 0.021 166)", "oklch(57% 0.019 166)", "oklch(70% 0.016 166)", "oklch(84% 0.011 166)", "oklch(95% 0.005 166)"]
+      },
+      "ink-muted": {
+        "role": "neutral",
+        "displayName": "元数据墨",
+        "canonical": "oklch(53% 0.018 166)",
+        "tonalRamp": ["oklch(17% 0.012 166)", "oklch(29% 0.016 166)", "oklch(41% 0.019 166)", "oklch(53% 0.018 166)", "oklch(64% 0.016 166)", "oklch(75% 0.014 166)", "oklch(87% 0.009 166)", "oklch(95% 0.004 166)"]
+      },
+      "reed-border": {
+        "role": "neutral",
+        "displayName": "芦苇边线",
+        "canonical": "oklch(87% 0.018 166)",
+        "tonalRamp": ["oklch(18% 0.013 166)", "oklch(31% 0.017 166)", "oklch(44% 0.02 166)", "oklch(57% 0.021 166)", "oklch(69% 0.02 166)", "oklch(78% 0.019 166)", "oklch(87% 0.018 166)", "oklch(95% 0.009 166)"]
+      },
+      "fed-blue": {
+        "role": "secondary",
+        "displayName": "联储蓝",
+        "canonical": "oklch(50% 0.075 235)",
+        "tonalRamp": ["oklch(17% 0.035 235)", "oklch(28% 0.055 235)", "oklch(39% 0.07 235)", "oklch(50% 0.075 235)", "oklch(63% 0.068 235)", "oklch(75% 0.055 235)", "oklch(87% 0.038 235)", "oklch(95% 0.018 235)"]
+      },
+      "fiscal-amber": {
+        "role": "secondary",
+        "displayName": "财政琥珀",
+        "canonical": "oklch(51% 0.08 75)",
+        "tonalRamp": ["oklch(18% 0.035 75)", "oklch(29% 0.055 75)", "oklch(40% 0.073 75)", "oklch(51% 0.08 75)", "oklch(64% 0.072 75)", "oklch(76% 0.058 75)", "oklch(88% 0.04 75)", "oklch(95% 0.018 75)"]
+      },
+      "money-teal": {
+        "role": "secondary",
+        "displayName": "货币市场青",
+        "canonical": "oklch(49% 0.072 166)",
+        "tonalRamp": ["oklch(17% 0.032 166)", "oklch(28% 0.051 166)", "oklch(38% 0.066 166)", "oklch(49% 0.072 166)", "oklch(62% 0.065 166)", "oklch(74% 0.053 166)", "oklch(86% 0.036 166)", "oklch(95% 0.016 166)"]
+      },
+      "transmission-plum": {
+        "role": "secondary",
+        "displayName": "传导梅紫",
+        "canonical": "oklch(51% 0.058 315)",
+        "tonalRamp": ["oklch(17% 0.025 315)", "oklch(28% 0.04 315)", "oklch(39% 0.052 315)", "oklch(51% 0.058 315)", "oklch(64% 0.052 315)", "oklch(76% 0.043 315)", "oklch(88% 0.03 315)", "oklch(95% 0.014 315)"]
+      },
+      "supportive-green": {
+        "role": "semantic",
+        "displayName": "支持绿",
+        "canonical": "oklch(49% 0.09 155)",
+        "tonalRamp": ["oklch(17% 0.04 155)", "oklch(28% 0.062 155)", "oklch(39% 0.082 155)", "oklch(49% 0.09 155)", "oklch(62% 0.08 155)", "oklch(74% 0.064 155)", "oklch(86% 0.043 155)", "oklch(95% 0.019 155)"]
+      },
+      "caution-amber": {
+        "role": "semantic",
+        "displayName": "降级琥珀",
+        "canonical": "oklch(52% 0.105 72)",
+        "tonalRamp": ["oklch(18% 0.045 72)", "oklch(29% 0.073 72)", "oklch(40% 0.098 72)", "oklch(52% 0.105 72)", "oklch(64% 0.09 72)", "oklch(76% 0.07 72)", "oklch(88% 0.046 72)", "oklch(95% 0.02 72)"]
+      },
+      "draining-red": {
+        "role": "semantic",
+        "displayName": "抽水红",
+        "canonical": "oklch(52% 0.13 28)",
+        "tonalRamp": ["oklch(17% 0.055 28)", "oklch(28% 0.086 28)", "oklch(40% 0.118 28)", "oklch(52% 0.13 28)", "oklch(64% 0.112 28)", "oklch(75% 0.086 28)", "oklch(86% 0.056 28)", "oklch(95% 0.023 28)"]
+      }
+    },
+    "typographyMeta": {
+      "display": {"displayName": "首要变化", "purpose": "只用于总览中的净流动性代理周变化。"},
+      "headline": {"displayName": "页面标题", "purpose": "页面标题与首屏环境判断。"},
+      "title": {"displayName": "分区标题", "purpose": "内容分区和流动性层级标题。"},
+      "body": {"displayName": "正文", "purpose": "解释、定义和方法边界。"},
+      "label": {"displayName": "证据标签", "purpose": "眉题、状态和元数据标签。"}
+    },
+    "shadows": [
+      {"name": "sticky-ambient", "value": "0 0.5rem 1.5rem oklch(25% 0.02 166 / 0.07)", "purpose": "只用于移动端固定底部导航。"}
+    ],
+    "motion": [
+      {"name": "state-standard", "value": "160ms ease", "purpose": "hover、选择和颜色状态切换。"},
+      {"name": "press-feedback", "value": "120ms ease", "purpose": "按钮和导航的轻微按压反馈。"},
+      {"name": "view-reveal", "value": "180ms ease", "purpose": "同页视图切换的短距离显现，并尊重减少动态效果设置。"}
+    ],
+    "breakpoints": [
+      {"name": "compact", "value": "640px"},
+      {"name": "comparison", "value": "768px"},
+      {"name": "desktop-rail", "value": "1024px"}
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Action",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "用于重试等单一明确结果的行动按钮。",
+      "html": "<button class=\"ds-action\" type=\"button\">重新读取数据</button>",
+      "css": ".ds-action{min-height:44px;padding:0 16px;border:0;border-radius:999px;background:var(--color-accent,oklch(48% 0.078 166));color:var(--color-surface,oklch(99.2% 0.004 166));font:650 14px/1.5 -apple-system,BlinkMacSystemFont,system-ui,sans-serif;cursor:pointer;transition:background-color 160ms ease,transform 120ms ease}.ds-action:hover{background:var(--color-accent-hover,oklch(42% 0.079 166))}.ds-action:active{transform:scale(.97)}.ds-action:focus-visible{outline:3px solid var(--color-focus,oklch(55% 0.12 166));outline-offset:3px}"
+    },
+    {
+      "name": "Icon Refresh Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "视觉轻量但保持 44px 触控范围的刷新操作。",
+      "html": "<button class=\"ds-icon-button\" type=\"button\" aria-label=\"刷新最新数据\"><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M20 11a8 8 0 1 0-2.35 5.65M20 5v6h-6\"/></svg></button>",
+      "css": ".ds-icon-button{display:grid;width:44px;height:44px;place-items:center;border:0;border-radius:50%;background:transparent;color:var(--color-text-soft,oklch(43% 0.021 166));cursor:pointer;transition:background-color 160ms ease,color 160ms ease,transform 120ms ease}.ds-icon-button svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.ds-icon-button:hover{background:var(--color-surface-strong,oklch(91.8% 0.017 166));color:var(--color-accent,oklch(48% 0.078 166))}.ds-icon-button:active{transform:scale(.94)}.ds-icon-button:focus-visible{outline:3px solid var(--color-focus,oklch(55% 0.12 166));outline-offset:3px}"
+    },
+    {
+      "name": "Filter Chip",
+      "kind": "chip",
+      "refersTo": "filter-chip-selected",
+      "description": "账本分组和历史区间的可滚动筛选控件。",
+      "html": "<button class=\"ds-chip\" type=\"button\" aria-pressed=\"true\">货币市场</button>",
+      "css": ".ds-chip{min-height:44px;padding:0 16px;border:1px solid var(--color-accent,oklch(48% 0.078 166));border-radius:999px;background:var(--color-accent-soft,oklch(91% 0.038 166));color:var(--color-accent,oklch(48% 0.078 166));font:650 14px/1.5 -apple-system,BlinkMacSystemFont,system-ui,sans-serif;cursor:pointer;transition:background-color 160ms ease,transform 120ms ease}.ds-chip:active{transform:scale(.97)}.ds-chip:focus-visible{outline:3px solid var(--color-focus,oklch(55% 0.12 166));outline-offset:3px}"
+    },
+    {
+      "name": "Data Status Pill",
+      "kind": "chip",
+      "refersTo": "filter-chip-selected",
+      "description": "同时使用圆点和文字传达数据质量。",
+      "html": "<span class=\"ds-status\">数据正常</span>",
+      "css": ".ds-status{display:inline-flex;min-height:28px;align-items:center;gap:6px;padding:0 8px;border-radius:999px;background:var(--color-positive-soft,oklch(92% 0.035 155));color:var(--color-positive,oklch(49% 0.09 155));font:680 12px/1.5 -apple-system,BlinkMacSystemFont,system-ui,sans-serif}.ds-status:before{width:7px;height:7px;border-radius:50%;background:currentColor;content:\"\"}"
+    },
+    {
+      "name": "Trust Panel",
+      "kind": "card",
+      "refersTo": "trust-panel",
+      "description": "总览中唯一的独立核验面板，承载覆盖率、时间和日期差异。",
+      "html": "<section class=\"ds-trust\"><h3>数据可信度</h3><strong>12/12</strong><span>核心指标通过</span></section>",
+      "css": ".ds-trust{display:grid;gap:16px;padding:24px;border:1px solid var(--color-border,oklch(87% 0.018 166));border-radius:16px;background:var(--color-surface,oklch(99.2% 0.004 166));color:var(--color-text,oklch(25% 0.024 166));box-shadow:none;font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif}.ds-trust h3{margin:0;font-size:20px}.ds-trust strong{font-size:20px;font-variant-numeric:tabular-nums}.ds-trust span{color:var(--color-text-muted,oklch(53% 0.018 166));font-size:12px}"
+    },
+    {
+      "name": "Adaptive Primary Navigation",
+      "kind": "nav",
+      "refersTo": "nav-item-active",
+      "description": "手机固定底栏在桌面端转为左侧粘性导航。",
+      "html": "<nav class=\"ds-nav\" aria-label=\"主要导航\"><a href=\"#\" aria-current=\"page\"><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M4 19V9m6 10V5m6 14v-7m4 7H2\"/></svg><span>总览</span></a><a href=\"#\"><span>账本</span></a></nav>",
+      "css": ".ds-nav{display:grid;grid-template-columns:repeat(2,1fr);gap:4px;padding:8px;background:var(--color-surface,oklch(99.2% 0.004 166));font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif}.ds-nav a{display:grid;min-height:56px;place-items:center;gap:2px;border-radius:8px;color:var(--color-text-muted,oklch(53% 0.018 166));font-size:12px;font-weight:650;text-decoration:none}.ds-nav a[aria-current=\"page\"]{background:var(--color-accent-soft,oklch(91% 0.038 166));color:var(--color-accent,oklch(48% 0.078 166))}.ds-nav svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round}.ds-nav a:focus-visible{outline:3px solid var(--color-focus,oklch(55% 0.12 166));outline-offset:3px}"
+    },
+    {
+      "name": "Evidence Disclosure Row",
+      "kind": "custom",
+      "description": "不用模态框即可从指标摘要下钻到定义、历史和来源。",
+      "html": "<details class=\"ds-disclosure\"><summary><span><strong>美联储总资产</strong><small>联储 · 8月26日</small></span><b>6.73 万亿美元</b></summary><p>联储持有的全部资产，是资产负债表规模的总量锚。</p></details>",
+      "css": ".ds-disclosure{border-top:1px solid var(--color-border,oklch(87% 0.018 166));border-bottom:1px solid var(--color-border,oklch(87% 0.018 166));color:var(--color-text,oklch(25% 0.024 166));font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif}.ds-disclosure summary{display:grid;min-height:76px;grid-template-columns:1fr auto;align-items:center;gap:16px;padding:16px 0;cursor:pointer;list-style:none}.ds-disclosure span{display:grid}.ds-disclosure strong,.ds-disclosure b{font-size:14px}.ds-disclosure small{color:var(--color-text-muted,oklch(53% 0.018 166));font-size:12px}.ds-disclosure p{max-width:65ch;color:var(--color-text-soft,oklch(43% 0.021 166));font-size:14px;line-height:1.5}.ds-disclosure summary:focus-visible{outline:3px solid var(--color-focus,oklch(55% 0.12 166));outline-offset:3px}"
+    }
+  ],
+  "narrative": {
+    "northStar": "晨间观测台",
+    "overview": "这是一个安静、精确、可核验的晨间工作台。视觉顺序始终是先回答环境与主要驱动，再展开公式、观测日期、历史和官方来源。它像一张整理清楚的观测桌，不像交易终端，也不借助行情氛围刺激决策。系统以移动端单手阅读为起点，桌面端只增加对比空间，不改变叙事顺序。层级主要来自空间、对齐、字号、字重和少量表面差异；动效只解释状态变化。黑底霓虹、紫色渐变、玻璃拟态、金色财富模板和同尺寸卡片墙都被明确排除。",
+    "keyCharacteristics": [
+      "浅色优先，带青绿色倾向的中性表面。",
+      "首屏结论明确，但任何代理都附带公式与证据边界。",
+      "事实、确定性计算、Agent 分析和未知事项严格分层。",
+      "手机点击目标至少 44×44 CSS 像素，桌面布局不牺牲阅读顺序。",
+      "正常、降级、阻止分析、缓存与冲突都是正式产品状态。"
+    ],
+    "rules": [
+      {"name": "The Rare Accent Rule", "body": "深观测绿只承担操作、选中和焦点，单屏视觉重量不得超过约 10%。", "section": "colors"},
+      {"name": "The Meaning Before Color Rule", "body": "原始指标上涨或下跌不得自动着绿或着红；只有明确公式中的支持与抽水才使用 supportive-green 与 draining-red，并同时显示符号和文字。", "section": "colors"},
+      {"name": "The Fixed Dashboard Scale Rule", "body": "看板字号使用固定 rem 层级，不使用随视口流动的标题字号；响应式变化来自结构重排。", "section": "typography"},
+      {"name": "The Tabular Evidence Rule", "body": "金额、利率、日期、比例和图表坐标必须使用 tabular numbers，确保纵向核验时对齐。", "section": "typography"},
+      {"name": "The Flat-by-Default Rule", "body": "如果普通面板的阴影一眼可见，阴影就过重；先用背景、边线和留白解决层级。", "section": "elevation"}
+    ],
+    "dos": [
+      "Do 让首屏先回答环境、方向和主要驱动，并在一次操作内到达公式、观测日期和来源。",
+      "Do 把缺失、缓存、过期、冲突和离线作为正式状态；null 永远显示为“不可用”，不显示为 0。",
+      "Do 只在支持或抽水含义已由公式确定时使用绿红语义，原始涨跌保持中性。",
+      "Do 使用 4pt 间距系统、至少 1rem 正文和至少 44×44 CSS 像素的手机触控目标。",
+      "Do 在 390px、768px 和 1024px 以上分别验证结构，不把桌面简单缩小成手机。"
+    ],
+    "donts": [
+      "Don't 做黑底霓虹、紫色渐变和发光边框式的加密行情页面。",
+      "Don't 做海军蓝加金色的传统财富管理模板。",
+      "Don't 做由大量同尺寸指标卡片组成的通用 SaaS 看板，也不要在卡片内继续嵌套卡片。",
+      "Don't 使用玻璃拟态、渐变文字或装饰性动效制造“高级感”。",
+      "Don't 把单一流动性代理包装成确定的买卖信号。",
+      "Don't 隐藏数据缺失、观测日期差异、缓存和来源冲突。",
+      "Don't 使用粗侧边色条、明显阴影、模态框优先交互或颜色作为唯一状态信号。"
+    ]
+  }
+}

@@ -1,0 +1,174 @@
+{
+  "schema_version": "1.1",
+  "past_hours": 24,
+  "future_days": 90,
+  "max_past_items": 24,
+  "max_future_items": 24,
+  "article_max_chars": 8000,
+  "trusted_publishers": [
+    "Reuters",
+    "Associated Press",
+    "AP News",
+    "Bloomberg",
+    "The Wall Street Journal",
+    "Financial Times",
+    "CNBC",
+    "Axios"
+  ],
+  "sources": [
+    {
+      "id": "fed_press_rss",
+      "label": "美联储新闻",
+      "handler": "past_rss",
+      "source_name": "Federal Reserve Board",
+      "source_tier": "official_primary",
+      "url": "https://www.federalreserve.gov/feeds/press_all.xml",
+      "fetch_article_content": true,
+      "required": false
+    },
+    {
+      "id": "treasury_press",
+      "label": "美国财政部新闻",
+      "handler": "treasury_press_html",
+      "source_name": "U.S. Department of the Treasury",
+      "source_tier": "official_primary",
+      "url": "https://home.treasury.gov/news/press-releases",
+      "required": false
+    },
+    {
+      "id": "eia_today_in_energy",
+      "label": "EIA 能源分析",
+      "handler": "past_rss",
+      "source_name": "U.S. Energy Information Administration",
+      "source_tier": "official_primary",
+      "url": "https://www.eia.gov/rss/todayinenergy.xml",
+      "fetch_article_content": true,
+      "include_terms": [
+        "crude oil",
+        "petroleum",
+        "gasoline",
+        "opec",
+        "refinery",
+        "cushing",
+        "strategic petroleum reserve"
+      ],
+      "required": false
+    },
+    {
+      "id": "cnbc_top_rss",
+      "label": "CNBC 宏观与市场新闻",
+      "handler": "past_rss",
+      "source_name": "CNBC",
+      "source_tier": "trusted_publisher",
+      "url": "https://www.cnbc.com/id/100003114/device/rss/rss.html",
+      "fetch_article_content": true,
+      "include_terms": [
+        "federal reserve",
+        "fed ",
+        "treasury",
+        "inflation",
+        "jobs",
+        "interest rate",
+        "bond yield",
+        "dollar",
+        "liquidity",
+        "repo",
+        "crude oil",
+        "brent",
+        "wti",
+        "opec"
+      ],
+      "required": false
+    },
+    {
+      "id": "ft_markets_rss",
+      "label": "Financial Times 市场新闻",
+      "handler": "past_rss",
+      "source_name": "Financial Times",
+      "source_tier": "trusted_publisher",
+      "url": "https://www.ft.com/rss/markets",
+      "fetch_article_content": true,
+      "include_terms": [
+        "federal reserve",
+        "fed ",
+        "treasury",
+        "inflation",
+        "jobs",
+        "interest rate",
+        "bond yield",
+        "dollar",
+        "liquidity",
+        "repo",
+        "crude oil",
+        "brent",
+        "wti",
+        "opec"
+      ],
+      "required": false
+    },
+    {
+      "id": "trusted_macro_news",
+      "label": "可信宏观新闻",
+      "handler": "past_google_news_rss",
+      "source_name": "Google News RSS",
+      "source_tier": "trusted_republisher",
+      "url": "https://news.google.com/rss/search?q=%28Federal%20Reserve%20OR%20Treasury%20OR%20TGA%20OR%20repo%20OR%20SOFR%20OR%20US%20dollar%20OR%20Treasury%20yields%20OR%20liquidity%20OR%20inflation%20OR%20jobs%29%20when%3A1d&hl=en-US&gl=US&ceid=US%3Aen",
+      "required": false
+    },
+    {
+      "id": "trusted_energy_news",
+      "label": "可信能源市场新闻",
+      "handler": "past_google_news_rss",
+      "source_name": "Google News RSS",
+      "source_tier": "trusted_republisher",
+      "url": "https://news.google.com/rss/search?q=%28WTI%20OR%20Brent%20OR%20crude%20oil%20OR%20OPEC%20OR%20oil%20supply%29%20when%3A1d&hl=en-US&gl=US&ceid=US%3Aen",
+      "required": false
+    },
+    {
+      "id": "fomc_calendar",
+      "label": "FOMC 日程",
+      "handler": "future_fomc_html",
+      "source_name": "Federal Reserve Board",
+      "source_tier": "official_primary",
+      "url": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+      "required": false
+    },
+    {
+      "id": "bea_release_schedule",
+      "label": "BEA 数据日程",
+      "handler": "future_bea_html",
+      "source_name": "U.S. Bureau of Economic Analysis",
+      "source_tier": "official_primary",
+      "url": "https://www.bea.gov/news/schedule/",
+      "required": false
+    },
+    {
+      "id": "bls_release_calendar",
+      "label": "BLS 数据日程",
+      "handler": "future_bls_ics",
+      "source_name": "U.S. Bureau of Labor Statistics",
+      "source_tier": "official_primary",
+      "url": "https://www.bls.gov/schedule/news_release/bls.ics",
+      "required": false
+    },
+    {
+      "id": "treasury_auction_schedule",
+      "label": "美债大型拍卖日程",
+      "handler": "future_treasury_auction_xml",
+      "source_name": "U.S. Department of the Treasury",
+      "source_tier": "official_primary",
+      "url": "https://home.treasury.gov/policy-issues/financing-the-government/quarterly-refunding/most-recent-quarterly-refunding-documents/",
+      "required": false
+    },
+    {
+      "id": "eia_wpsr_schedule",
+      "label": "EIA 周度石油报告日程",
+      "handler": "future_eia_wpsr_html",
+      "source_name": "U.S. Energy Information Administration",
+      "source_tier": "official_primary",
+      "url": "https://www.eia.gov/petroleum/supply/weekly/schedule.php",
+      "max_events": 4,
+      "required": false
+    }
+  ]
+}

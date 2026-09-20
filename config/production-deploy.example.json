@@ -1,0 +1,13 @@
+{
+  "schema_version": "1.0",
+  "enabled": false,
+  "host": "dashboard.example.com",
+  "user": "macroliq",
+  "port": 22,
+  "identity_file": "/absolute/path/to/deploy-key",
+  "known_hosts_file": "/absolute/path/to/known_hosts",
+  "remote_root": "/srv/macro-liquidity-dashboard",
+  "service_name": "macro-liquidity-dashboard.service",
+  "public_url": "https://dashboard.example.com/liquidity/",
+  "retain_releases": 7
+}

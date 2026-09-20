@@ -1,0 +1,45 @@
+{
+  "schema_version": "1.0",
+  "request_policy": {
+    "connect_timeout_seconds": 6,
+    "timeout_seconds": 25,
+    "max_attempts": 2,
+    "base_backoff_seconds": 1.0,
+    "curl_user_agent": "macro-liquidity-dashboard/0.1 stablecoin-monitor"
+  },
+  "source": {
+    "id": "defillama_stablecoins",
+    "name": "DefiLlama stablecoin data",
+    "source_owner": "DefiLlama",
+    "authority": "trusted_aggregator",
+    "cadence": "calendar_daily",
+    "history_url": "https://stablecoins.llama.fi/stablecoincharts/all",
+    "composition_url": "https://stablecoins.llama.fi/stablecoins?includePrices=true",
+    "documentation_url": "https://defillama.com/docs/api",
+    "freshness_max_days": 2,
+    "cache_max_days": 3,
+    "minimum_recent_daily_points": 28,
+    "recent_window_days": 31,
+    "supply_range_usd": [1000000000, 10000000000000],
+    "composition_warning_percent": 1.0,
+    "composition_block_percent": 3.0,
+    "daily_move_warning_percent": 5.0,
+    "peg_basket_size": 10,
+    "asset_ids": {
+      "usdt": "1",
+      "usdc": "2"
+    }
+  },
+  "issuer_cross_checks": [
+    {
+      "asset": "USDC",
+      "owner": "Circle",
+      "url": "https://www.circle.com/transparency"
+    },
+    {
+      "asset": "USDT",
+      "owner": "Tether",
+      "url": "https://tether.to/en/transparency/"
+    }
+  ]
+}

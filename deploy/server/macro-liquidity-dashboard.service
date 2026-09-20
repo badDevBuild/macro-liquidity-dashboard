@@ -1,0 +1,36 @@
+[Unit]
+Description=Macro Liquidity Dashboard
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=macroliq
+Group=macroliq
+WorkingDirectory=/srv/macro-liquidity-dashboard/current
+Environment=PYTHONPATH=/srv/macro-liquidity-dashboard/current/src
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/usr/bin/python3 -m liquidity_dashboard.server --host 127.0.0.1 --port 8877 --project-root /srv/macro-liquidity-dashboard/current
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=15
+UMask=0027
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_INET AF_INET6
+LimitNOFILE=4096
+MemoryMax=384M
+
+[Install]
+WantedBy=multi-user.target

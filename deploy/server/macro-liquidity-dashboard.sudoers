@@ -1,0 +1,1 @@
+macroliq ALL=(root) NOPASSWD: /usr/bin/systemctl restart macro-liquidity-dashboard.service, /usr/bin/systemctl stop macro-liquidity-dashboard.service

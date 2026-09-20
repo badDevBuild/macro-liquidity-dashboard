@@ -1,0 +1,8 @@
+{
+  "schema_version": "1.0",
+  "display_mode": "pilot_shadow",
+  "enabled": true,
+  "approved_at": "2026-08-28T19:50:21+08:00",
+  "approved_by": "owner",
+  "note": "个人看板直接显示已通过证据校验的 Agent 影子分析，并在使用中继续完成稳定性观察。"
+}

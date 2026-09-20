@@ -1,0 +1,112 @@
+{
+  "schema_version": "1.0",
+  "history_days": 1900,
+  "request_policy": {
+    "timeout_seconds": 30,
+    "max_attempts": 3,
+    "backoff_seconds": 2,
+    "user_agent": "MacroLiquidityDashboard/1.0 (+private research dashboard)"
+  },
+  "prices": [
+    {
+      "id": "fred_wti_spot",
+      "series_key": "wti_spot",
+      "series_id": "DCOILWTICO",
+      "metric_id": "energy_wti_spot",
+      "name": "WTI 库欣现货价",
+      "source_owner": "Federal Reserve Bank of St. Louis / U.S. EIA",
+      "authority": "official_redistributor",
+      "cadence": "business_daily",
+      "unit": "usd_per_barrel",
+      "freshness_max_days": 7,
+      "cache_max_days": 14,
+      "url_template": "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DCOILWTICO&cosd={start_date}",
+      "documentation_url": "https://fred.stlouisfed.org/series/DCOILWTICO"
+    },
+    {
+      "id": "fred_brent_spot",
+      "series_key": "brent_spot",
+      "series_id": "DCOILBRENTEU",
+      "metric_id": "energy_brent_spot",
+      "name": "Brent 现货价",
+      "source_owner": "Federal Reserve Bank of St. Louis / U.S. EIA",
+      "authority": "official_redistributor",
+      "cadence": "business_daily",
+      "unit": "usd_per_barrel",
+      "freshness_max_days": 7,
+      "cache_max_days": 14,
+      "url_template": "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DCOILBRENTEU&cosd={start_date}",
+      "documentation_url": "https://fred.stlouisfed.org/series/DCOILBRENTEU"
+    }
+  ],
+  "weekly": [
+    {
+      "id": "eia_commercial_crude_stocks",
+      "series_key": "commercial_crude_stocks",
+      "series_id": "WCESTUS1",
+      "metric_id": "energy_commercial_crude_stocks",
+      "name": "美国商业原油库存（不含 SPR）",
+      "route": "petroleum/stoc/wstk",
+      "source_owner": "U.S. Energy Information Administration",
+      "authority": "official",
+      "cadence": "weekly",
+      "unit": "thousand_barrels",
+      "freshness_max_days": 12,
+      "cache_max_days": 19,
+      "documentation_url": "https://www.eia.gov/petroleum/supply/weekly/"
+    },
+    {
+      "id": "eia_cushing_crude_stocks",
+      "series_key": "cushing_crude_stocks",
+      "series_id": "W_EPC0_SAX_YCUOK_MBBL",
+      "metric_id": "energy_cushing_crude_stocks",
+      "name": "库欣原油库存",
+      "route": "petroleum/stoc/wstk",
+      "source_owner": "U.S. Energy Information Administration",
+      "authority": "official",
+      "cadence": "weekly",
+      "unit": "thousand_barrels",
+      "freshness_max_days": 12,
+      "cache_max_days": 19,
+      "documentation_url": "https://www.eia.gov/petroleum/supply/weekly/"
+    },
+    {
+      "id": "eia_spr_stocks",
+      "series_key": "spr_stocks",
+      "series_id": "WCSSTUS1",
+      "metric_id": "energy_spr_stocks",
+      "name": "美国战略石油储备（SPR）",
+      "route": "petroleum/stoc/wstk",
+      "source_owner": "U.S. Energy Information Administration",
+      "authority": "official",
+      "cadence": "weekly",
+      "unit": "thousand_barrels",
+      "freshness_max_days": 12,
+      "cache_max_days": 19,
+      "documentation_url": "https://www.eia.gov/petroleum/supply/weekly/"
+    },
+    {
+      "id": "eia_gasoline_product_supplied",
+      "series_key": "gasoline_product_supplied",
+      "series_id": "WGFUPUS2",
+      "metric_id": "energy_gasoline_product_supplied",
+      "name": "美国成品汽油隐含需求",
+      "route": "petroleum/cons/wpsup",
+      "source_owner": "U.S. Energy Information Administration",
+      "authority": "official",
+      "cadence": "weekly",
+      "unit": "thousand_barrels_per_day",
+      "freshness_max_days": 12,
+      "cache_max_days": 19,
+      "documentation_url": "https://www.eia.gov/petroleum/supply/weekly/"
+    }
+  ],
+  "curve": {
+    "status": "unavailable",
+    "source_id": "eia_discontinued_wti_futures",
+    "name": "EIA WTI 近月期货价",
+    "discontinued_after": "2024-04-05",
+    "documentation_url": "https://www.eia.gov/dnav/pet/pet_pri_fut_s1_d.htm",
+    "note": "EIA 的免费近月期货序列已停止更新，因此不用历史旧值代替当前曲线。"
+  }
+}
