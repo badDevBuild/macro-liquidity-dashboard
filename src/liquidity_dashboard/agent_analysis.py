@@ -313,6 +313,7 @@ def _validate_payload(
     proxy: dict[str, Any],
     context_items: dict[str, dict[str, Any]] | None = None,
     analysis_delta: dict[str, Any] | None = None,
+    weekly_proxy: dict[str, Any] | None = None,
 ) -> list[str]:
     errors: list[str] = []
     for field in REQUIRED_TEXT_FIELDS:
@@ -384,7 +385,7 @@ def _validate_payload(
                     or evidence.get("comparison_window") != "since_previous_run"
                     or evidence.get("metric_id") not in official_ids
                     or not _evidence_matches(
-                        evidence, metrics, proxy, analysis_delta
+                        evidence, metrics, proxy, analysis_delta, weekly_proxy
                     )
                 ):
                     errors.append("daily_update contains evidence that does not match the previous run")
@@ -401,7 +402,7 @@ def _validate_payload(
                 continue
             for evidence in evidence_items:
                 if not isinstance(evidence, dict) or not _evidence_matches(
-                    evidence, metrics, proxy, analysis_delta
+                    evidence, metrics, proxy, analysis_delta, weekly_proxy
                 ):
                     errors.append(f"{section} contains evidence that does not match the snapshot")
     if payload.get("status") == "ready" and not payload.get("drivers"):
@@ -425,7 +426,7 @@ def _validate_payload(
         else:
             for evidence in evidence_items:
                 if not isinstance(evidence, dict) or not _evidence_matches(
-                    evidence, metrics, proxy, analysis_delta
+                    evidence, metrics, proxy, analysis_delta, weekly_proxy
                 ):
                     errors.append("layer_analysis contains evidence that does not match the snapshot")
     if set(layer_names) != REQUIRED_LAYERS or len(layer_names) != len(REQUIRED_LAYERS):
@@ -562,9 +563,17 @@ def validate_agent_payload(
     proxy: dict[str, Any],
     context_items: dict[str, dict[str, Any]] | None = None,
     analysis_delta: dict[str, Any] | None = None,
+    weekly_proxy: dict[str, Any] | None = None,
 ) -> list[str]:
     """Validate an Agent artifact against the exact deterministic snapshot views."""
-    return _validate_payload(payload, metrics, proxy, context_items, analysis_delta)
+    return _validate_payload(
+        payload,
+        metrics,
+        proxy,
+        context_items,
+        analysis_delta,
+        weekly_proxy,
+    )
 
 
 def _analysis_context(root: Path, payload: dict[str, Any]) -> dict[str, Any] | None:

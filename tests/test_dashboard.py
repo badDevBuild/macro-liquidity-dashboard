@@ -868,11 +868,11 @@ class FrontendDeploymentTests(unittest.TestCase):
         self.assertIn('localStorage.setItem(THEME_KEY, nextTheme)', app)
         self.assertIn('setAttribute("aria-pressed"', app)
         self.assertIn('html[data-theme="dark"]', styles)
-        self.assertIn('assets/app.css?v=44', index)
-        self.assertIn('assets/app.js?v=44', index)
-        self.assertIn('assets/coinbase-premium.js?v=44', index)
-        self.assertIn('assets/coinbase-premium.js?v=44', service_worker)
-        self.assertIn('`${CACHE_PREFIX}shell-v44`', service_worker)
+        self.assertIn('assets/app.css?v=45', index)
+        self.assertIn('assets/app.js?v=45', index)
+        self.assertIn('assets/coinbase-premium.js?v=45', index)
+        self.assertIn('assets/coinbase-premium.js?v=45', service_worker)
+        self.assertIn('`${CACHE_PREFIX}shell-v45`', service_worker)
         self.assertIn('`${CACHE_PREFIX}data-v3`', service_worker)
         self.assertIn('key.startsWith(CACHE_PREFIX)', service_worker)
         self.assertNotIn('.filter((key) => ![SHELL_CACHE, DATA_CACHE].includes(key))', service_worker)
@@ -908,6 +908,22 @@ class FrontendDeploymentTests(unittest.TestCase):
         self.assertIn("const segments = chartSegments(rawPoints, metric);", app)
         self.assertIn("const segmented = chartSegments(series.points, series);", app)
         self.assertGreaterEqual(app.count("_segmentStart"), 5)
+
+    def test_all_chart_families_expose_pointer_and_keyboard_readouts(self) -> None:
+        app = (PROJECT_ROOT / "web" / "assets" / "app.js").read_text(encoding="utf-8")
+        premium = (PROJECT_ROOT / "web" / "assets" / "coinbase-premium.js").read_text(encoding="utf-8")
+        styles = (PROJECT_ROOT / "web" / "assets" / "app.css").read_text(encoding="utf-8")
+
+        self.assertIn("function bindChartExplorer", app)
+        self.assertIn('svg.addEventListener("pointermove"', app)
+        self.assertIn('svg.addEventListener("keydown"', app)
+        self.assertGreaterEqual(app.count("bindChartExplorer(container"), 5)
+        self.assertIn("bindCurveChartExplorer", app)
+        self.assertIn('class="chart-legend"', premium)
+        self.assertIn("pointermove", premium)
+        self.assertIn(".chart-tooltip", styles)
+        self.assertIn(".chart-legend", styles)
+        self.assertIn("--chart-series-2", styles)
 
     def test_derivatives_separates_price_change_from_funding_rate(self) -> None:
         app = (PROJECT_ROOT / "web" / "assets" / "app.js").read_text(

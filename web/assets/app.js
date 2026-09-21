@@ -1198,7 +1198,8 @@ function curveChart(curve) {
   const x = (index) => left + index * ((width - left - right) / Math.max(1, ids.length - 1));
   const y = (value) => top + (maximum - value) / (maximum - minimum) * (height - top - bottom);
   const pathFor = (snapshot) => ids.map((id, index) => `${index ? "L" : "M"}${x(index).toFixed(1)} ${y(Number(snapshot.values[id])).toFixed(1)}`).join(" ");
-  const dots = ids.map((id, index) => `<circle cx="${x(index).toFixed(1)}" cy="${y(Number(latest.values[id])).toFixed(1)}" r="3"></circle>`).join("");
+  const latestDots = ids.map((id, index) => `<circle class="curve-dot-latest" cx="${x(index).toFixed(1)}" cy="${y(Number(latest.values[id])).toFixed(1)}" r="3"></circle>`).join("");
+  const priorDots = prior ? ids.map((id, index) => `<circle class="curve-dot-prior" cx="${x(index).toFixed(1)}" cy="${y(Number(prior.values[id])).toFixed(1)}" r="3"></circle>`).join("") : "";
   const xLabels = labels.map((label, index) => `<text x="${x(index).toFixed(1)}" y="${height - 8}" text-anchor="middle">${escapeHTML(label)}</text>`).join("");
   return `
     <div class="curve-legend"><span><i class="legend-latest"></i>${escapeHTML(formatDate(latest.observed_at))}</span>${prior ? `<span><i class="legend-prior"></i>${escapeHTML(formatDate(prior.observed_at))}</span>` : ""}</div>
@@ -1207,11 +1208,46 @@ function curveChart(curve) {
       <line class="curve-grid" x1="${left}" y1="${height - bottom}" x2="${width - right}" y2="${height - bottom}"></line>
       ${prior ? `<path class="curve-line curve-line-prior" d="${pathFor(prior)}"></path>` : ""}
       <path class="curve-line curve-line-latest" d="${pathFor(latest)}"></path>
-      <g class="curve-dots">${dots}</g>
+      <g class="curve-dots curve-dots-prior">${priorDots}</g>
+      <g class="curve-dots curve-dots-latest">${latestDots}</g>
       ${xLabels}
       <text class="curve-axis-label" x="2" y="${top + 4}">${escapeHTML(`${roundForDisplay(maximum, 2)}%`)}</text>
       <text class="curve-axis-label" x="2" y="${height - bottom + 4}">${escapeHTML(`${roundForDisplay(minimum, 2)}%`)}</text>
     </svg>`;
+}
+
+function bindCurveChartExplorer(container, curve) {
+  const svg = container?.querySelector(".curve-svg");
+  const latest = curve?.snapshots?.latest;
+  const prior = curve?.snapshots?.["1w"];
+  const maturities = curve?.maturities || [];
+  if (!svg || !latest?.values || !maturities.length) return;
+  const latestDots = [...svg.querySelectorAll(".curve-dot-latest")];
+  const priorDots = [...svg.querySelectorAll(".curve-dot-prior")];
+  const samples = maturities.map((maturity, index) => {
+    const latestValue = numericOrNull(latest.values[maturity.metric_id]);
+    const priorValue = numericOrNull(prior?.values?.[maturity.metric_id]);
+    const values = [];
+    if (latestValue !== null && latestDots[index]) values.push({
+      label: formatDate(latest.observed_at),
+      formatted: `${roundForDisplay(latestValue, 2)}%`,
+      y: Number(latestDots[index].getAttribute("cy")),
+      tone: 1
+    });
+    if (priorValue !== null && priorDots[index]) values.push({
+      label: formatDate(prior.observed_at),
+      formatted: `${roundForDisplay(priorValue, 2)}%`,
+      y: Number(priorDots[index].getAttribute("cy")),
+      tone: 2
+    });
+    return {
+      heading: maturity.label,
+      observed_at: latest.observed_at,
+      x: Number(latestDots[index]?.getAttribute("cx")),
+      values
+    };
+  });
+  bindChartExplorer(container, samples, {plotTop: 20, plotBottom: 156, title: "美债收益率曲线"});
 }
 
 function treasuryCurvePanel(data) {
@@ -2081,6 +2117,25 @@ function drawYenMultiChart(container, rawPoints, specs, {rangeId, normalize = fa
       <text class="chart-label" x="${left}" y="${height - 8}">${escapeHTML(formatChartDate(firstDate, rangeId))}</text>
       <text class="chart-label" text-anchor="end" x="${left + plotWidth}" y="${height - 8}">${escapeHTML(formatChartDate(lastDate, rangeId))}</text>
     </svg>`;
+  const sampleDates = [...new Set(allPoints.map((point) => point.observed_at))].sort();
+  bindChartExplorer(container, sampleDates.map((observedAt) => {
+    const moment = Date.parse(`${observedAt.slice(0, 10)}T00:00:00Z`);
+    const valuesAtDate = usableSpecs.map((series) => {
+      const point = series.points.find((item) => item.observed_at === observedAt);
+      if (!point) return null;
+      return {
+        label: series.label,
+        formatted: normalize ? `${roundForDisplay(point.value, 1)}（起点=100）` : `${roundForDisplay(point.value, 3)}`,
+        y: yFor(point.value),
+        tone: series.index + 1
+      };
+    }).filter(Boolean);
+    return {
+      observed_at: observedAt,
+      x: left + (moment - firstTime) / timeSpan * plotWidth,
+      values: valuesAtDate
+    };
+  }), {plotTop: top, plotBottom: top + plotHeight, title: specs.map((item) => item.label).join("与")});
 }
 
 async function renderYenCarryChart(data) {
@@ -2299,6 +2354,19 @@ function drawCrossAssetDualChart(container, rawPoints, rangeId) {
       <text class="chart-label" x="${left}" y="${height - 8}">${escapeHTML(formatChartDate(points[0].observed_at, rangeId))}</text>
       <text class="chart-label" text-anchor="end" x="${left + plotWidth}" y="${height - 8}">${escapeHTML(formatChartDate(points.at(-1).observed_at, rangeId))}</text>
     </svg>`;
+  bindChartExplorer(container, points.map((point, index) => {
+    const timestamp = Date.parse(`${point.observed_at.slice(0, 10)}T00:00:00Z`);
+    const btcPoint = btc[index];
+    const dollarPoint = dollar[index];
+    return {
+      observed_at: point.observed_at,
+      x: left + (timestamp - firstTime) / timeSpan * plotWidth,
+      values: [
+        {label: "BTC", formatted: `${roundForDisplay(btcPoint.value, 1)}（起点=100）`, y: top + (maximum - Number(btcPoint.value)) / (maximum - minimum) * plotHeight, tone: 1},
+        {label: "广义美元", formatted: `${roundForDisplay(dollarPoint.value, 1)}（起点=100）`, y: top + (maximum - Number(dollarPoint.value)) / (maximum - minimum) * plotHeight, tone: 2}
+      ]
+    };
+  }), {plotTop: top, plotBottom: top + plotHeight, title: "BTC 与广义美元"});
 }
 
 async function renderCrossAssetChart(data) {
@@ -2539,6 +2607,8 @@ function renderTransmission(data) {
       </div>
     </section>
     ${cryptoMarketPanel(data)}`;
+
+  bindCurveChartExplorer(document.querySelector(".curve-chart-shell"), data.treasury_curve);
 
   document.querySelectorAll("[data-flow-mini-metric]").forEach((container) => {
     const metric = metricById(container.dataset.flowMiniMetric);
@@ -2949,6 +3019,116 @@ function pointsWithinDays(rawPoints, days) {
     : { points: points.slice(-8), label: "最近几次" };
 }
 
+let chartExplorerSequence = 0;
+
+function chartLegend(items, extraClass = "") {
+  const entries = (items || []).filter((item) => item?.label);
+  if (!entries.length) return "";
+  return `<div class="chart-legend ${escapeHTML(extraClass)}" aria-label="图例">${entries.map((item) => `
+    <span><i class="chart-legend-swatch chart-tone-${Number(item.tone) || 1}"></i>${escapeHTML(item.label)}</span>`).join("")}</div>`;
+}
+
+function bindChartExplorer(container, samples, {plotTop = 0, plotBottom = 100, title = "图表"} = {}) {
+  const svg = container?.querySelector("svg");
+  const usable = (samples || []).filter((sample) => Number.isFinite(sample?.x) && Array.isArray(sample?.values) && sample.values.length);
+  if (!container || !svg || !usable.length) return;
+
+  const namespace = "http://www.w3.org/2000/svg";
+  const viewBox = svg.viewBox?.baseVal;
+  const viewWidth = viewBox?.width || 1;
+  const tooltipId = `chart-tooltip-${++chartExplorerSequence}`;
+  const tooltip = document.createElement("div");
+  tooltip.className = `chart-tooltip${container.classList.contains("mini-chart") ? " chart-tooltip-compact" : ""}`;
+  tooltip.id = tooltipId;
+  tooltip.setAttribute("role", "status");
+  tooltip.setAttribute("aria-live", "polite");
+  tooltip.hidden = true;
+  container.appendChild(tooltip);
+
+  const layer = document.createElementNS(namespace, "g");
+  layer.classList.add("chart-hover-layer");
+  layer.setAttribute("aria-hidden", "true");
+  const guide = document.createElementNS(namespace, "line");
+  guide.classList.add("chart-hover-guide");
+  guide.setAttribute("y1", String(plotTop));
+  guide.setAttribute("y2", String(plotBottom));
+  layer.appendChild(guide);
+  svg.appendChild(layer);
+
+  svg.setAttribute("tabindex", "0");
+  svg.setAttribute("focusable", "true");
+  svg.setAttribute("aria-describedby", tooltipId);
+  svg.classList.add("chart-explorer");
+
+  let activeIndex = usable.length - 1;
+  let pinned = false;
+
+  const hide = () => {
+    tooltip.hidden = true;
+    layer.hidden = true;
+  };
+  const show = (index) => {
+    activeIndex = Math.max(0, Math.min(usable.length - 1, index));
+    const sample = usable[activeIndex];
+    guide.setAttribute("x1", sample.x.toFixed(2));
+    guide.setAttribute("x2", sample.x.toFixed(2));
+    layer.querySelectorAll("circle").forEach((node) => node.remove());
+    sample.values.forEach((item) => {
+      if (!Number.isFinite(item.y)) return;
+      const marker = document.createElementNS(namespace, "circle");
+      marker.classList.add("chart-hover-dot", `chart-tone-${Number(item.tone) || 1}`);
+      marker.setAttribute("cx", sample.x.toFixed(2));
+      marker.setAttribute("cy", Number(item.y).toFixed(2));
+      marker.setAttribute("r", "4");
+      layer.appendChild(marker);
+    });
+    const heading = sample.heading || formatChartDate(sample.observed_at, "all");
+    tooltip.innerHTML = `<strong>${escapeHTML(heading)}</strong>${sample.values.map((item) => `
+      <span><i class="chart-tooltip-swatch chart-tone-${Number(item.tone) || 1}"></i><b>${escapeHTML(item.label || title)}</b><em>${escapeHTML(item.formatted)}</em></span>`).join("")}`;
+    tooltip.style.left = `${Math.max(18, Math.min(82, sample.x / viewWidth * 100))}%`;
+    tooltip.hidden = false;
+    layer.hidden = false;
+    svg.setAttribute("aria-label", `${title}，${heading}，${sample.values.map((item) => `${item.label} ${item.formatted}`).join("，")}`);
+  };
+  const nearestIndex = (clientX) => {
+    const rect = svg.getBoundingClientRect();
+    const svgX = (clientX - rect.left) / Math.max(1, rect.width) * viewWidth;
+    let nearest = 0;
+    usable.forEach((sample, index) => {
+      if (Math.abs(sample.x - svgX) < Math.abs(usable[nearest].x - svgX)) nearest = index;
+    });
+    return nearest;
+  };
+
+  svg.addEventListener("pointermove", (event) => {
+    if (event.pointerType === "touch") return;
+    pinned = false;
+    show(nearestIndex(event.clientX));
+  });
+  svg.addEventListener("pointerleave", () => { if (!pinned) hide(); });
+  svg.addEventListener("click", (event) => {
+    pinned = true;
+    show(nearestIndex(event.clientX));
+  });
+  svg.addEventListener("focus", () => show(activeIndex));
+  svg.addEventListener("blur", () => { if (!pinned) hide(); });
+  svg.addEventListener("keydown", (event) => {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End", "Escape"].includes(event.key)) return;
+    event.preventDefault();
+    if (event.key === "Escape") {
+      pinned = false;
+      hide();
+      return;
+    }
+    pinned = true;
+    if (event.key === "Home") activeIndex = 0;
+    else if (event.key === "End") activeIndex = usable.length - 1;
+    else activeIndex += event.key === "ArrowRight" ? 1 : -1;
+    show(activeIndex);
+  });
+  hide();
+}
+
 function drawMiniChart(container, rawPoints, metric, periodLabel = "过去一年") {
   if (!container) return;
   const segments = chartSegments(rawPoints, metric);
@@ -2985,6 +3165,11 @@ function drawMiniChart(container, rawPoints, metric, periodLabel = "过去一年
       <path class="mini-chart-line" d="${path}"></path>
       <circle class="mini-chart-dot" cx="${last[0].toFixed(2)}" cy="${last[1].toFixed(2)}" r="3"></circle>
     </svg>`;
+  bindChartExplorer(container, points.map((point, index) => ({
+    observed_at: point.observed_at,
+    x: coordinates[index][0],
+    values: [{label: metric?.short_label || metric?.label || "数值", formatted: chartAxisValue(point.value, metric), y: coordinates[index][1], tone: 1}]
+  })), {plotTop: padding, plotBottom: height - padding, title: metric?.short_label || metric?.label || "指标"});
 }
 
 function drawSignedBarChart(container, rawPoints, metric, rangeId) {
@@ -3028,6 +3213,7 @@ function drawSignedBarChart(container, rawPoints, metric, rangeId) {
   }).join("");
   const accessible = `${metric?.label || "ETF 净流入"}，从 ${formatChartDate(points[0].observed_at, rangeId)} 到 ${formatChartDate(points.at(-1).observed_at, rangeId)}；正数流入，负数流出`;
   container.innerHTML = `
+    ${chartLegend([{label: "净流入", tone: 5}, {label: "净流出", tone: 6}], "chart-legend-bars")}
     <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHTML(accessible)}">
       <line class="chart-grid" x1="${left}" y1="${top}" x2="${left + plotWidth}" y2="${top}"></line>
       <line class="chart-grid" x1="${left}" y1="${top + plotHeight}" x2="${left + plotWidth}" y2="${top + plotHeight}"></line>
@@ -3039,6 +3225,19 @@ function drawSignedBarChart(container, rawPoints, metric, rangeId) {
       <text class="chart-label" text-anchor="end" x="${left + plotWidth}" y="${height - 8}">${escapeHTML(formatChartDate(points.at(-1).observed_at, rangeId))}</text>
     </svg>
     ${chartDataTable(points, metric, rangeId)}`;
+  bindChartExplorer(container, points.map((point, index) => {
+    const value = Number(point.value);
+    return {
+      observed_at: point.observed_at,
+      x: left + slot * index + slot / 2,
+      values: [{
+        label: value >= 0 ? "净流入" : "净流出",
+        formatted: formatChangeValue(metric, value),
+        y: top + (maximum - value) / (maximum - minimum) * plotHeight,
+        tone: value >= 0 ? 5 : 6
+      }]
+    };
+  }), {plotTop: top, plotBottom: top + plotHeight, title: metric?.label || "ETF 净流入"});
 }
 
 function drawChart(container, rawPoints, metric, rangeId) {
@@ -3109,6 +3308,7 @@ function drawChart(container, rawPoints, metric, rangeId) {
   const gapNote = segments.length > 1 ? `；有 ${segments.length - 1} 处数据缺口，折线已断开` : "";
   const accessible = `${metricLabel} ${RANGE_LABELS[rangeId] || rangeId}趋势，从 ${formatChartDate(points[0].observed_at, rangeId)} 到 ${formatChartDate(points.at(-1).observed_at, rangeId)}${gapNote}`;
   container.innerHTML = `
+    ${chartLegend([{label: metricLabel, tone: 1}], "chart-legend-single")}
     <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHTML(accessible)}">
       <line class="chart-grid" x1="${left}" y1="${top}" x2="${left + plotWidth}" y2="${top}"></line>
       <line class="chart-grid" x1="${left}" y1="${top + plotHeight / 2}" x2="${left + plotWidth}" y2="${top + plotHeight / 2}"></line>
@@ -3123,6 +3323,11 @@ function drawChart(container, rawPoints, metric, rangeId) {
       <text class="chart-label" text-anchor="end" x="${left + plotWidth}" y="${height - 8}">${escapeHTML(formatChartDate(points.at(-1).observed_at, rangeId))}</text>
     </svg>
     ${chartDataTable(tablePoints, metric, rangeId)}`;
+  bindChartExplorer(container, points.map((point, index) => ({
+    observed_at: point.observed_at,
+    x: coordinates[index][0],
+    values: [{label: metricLabel, formatted: chartAxisValue(point.value, metric), y: coordinates[index][1], tone: 1}]
+  })), {plotTop: top, plotBottom: top + plotHeight, title: metricLabel});
 }
 
 async function fetchSeriesPayload(metricId, rangeId, signal) {

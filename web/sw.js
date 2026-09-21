@@ -1,14 +1,14 @@
 const CACHE_PREFIX = "macro-liquidity-";
-const SHELL_CACHE = `${CACHE_PREFIX}shell-v44`;
+const SHELL_CACHE = `${CACHE_PREFIX}shell-v45`;
 const DATA_CACHE = `${CACHE_PREFIX}data-v3`;
 const scopedUrl = (path) => new URL(path, self.registration.scope).href;
 const scopedPath = (path) => new URL(path, self.registration.scope).pathname;
 const SHELL = [
   self.registration.scope,
   scopedUrl("index.html"),
-  scopedUrl("assets/app.css?v=44"),
-  scopedUrl("assets/coinbase-premium.js?v=44"),
-  scopedUrl("assets/app.js?v=44"),
+  scopedUrl("assets/app.css?v=45"),
+  scopedUrl("assets/coinbase-premium.js?v=45"),
+  scopedUrl("assets/app.js?v=45"),
   scopedUrl("assets/icon.svg"),
   scopedUrl("manifest.webmanifest")
 ];

@@ -96,7 +96,7 @@ async function renderPremiumChart() {
       const grids = [hi, (hi + lo) / 2, lo].map(v => `<line x1="${left}" x2="${right}" y1="${y(v)}" y2="${y(v)}" class="premium-grid"/><text x="${left - 8}" y="${y(v) + 4}" text-anchor="end">${premiumNumber(v, zero ? 1 : 0)}</text>`).join("");
       return `<text x="${left}" y="${top - 14}" class="premium-axis-title">${label}</text>${grids}${zero ? `<line x1="${left}" x2="${right}" y1="${y(0)}" y2="${y(0)}" class="premium-zero"/>` : ""}<path d="${path}" class="premium-line ${zero ? "premium-spread" : "premium-price"}"/>`;
     };
-    container.innerHTML = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="上图BTC美元价格，下图Coinbase溢价；正值更贵，负值更便宜">
+    container.innerHTML = `<div class="chart-legend" aria-label="图例"><span><i class="chart-legend-swatch chart-tone-1"></i>BTC 美元价格</span><span><i class="chart-legend-swatch chart-tone-2"></i>Coinbase 溢价</span></div><svg viewBox="0 0 ${width} ${height}" role="img" tabindex="0" aria-label="上图BTC美元价格，下图Coinbase溢价；移动或点击可查看同一时点的精确值">
       ${panel("btc_usd", 35, 154, daily ? "BTC 日均价格（美元）" : "BTC（美元）", false)}
       ${panel("value", 222, 340, daily ? "日均溢价（bp）" : "溢价（bp）", true)}
       <line data-premium-guide x1="${right}" x2="${right}" y1="30" y2="340" class="premium-guide"/>

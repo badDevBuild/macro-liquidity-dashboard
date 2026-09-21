@@ -63,6 +63,24 @@ def main() -> int:
         if click_race_result["selected"] != "true" or "2099" in click_race_result["title"]:
             raise AssertionError(f"real range buttons allowed a stale response to win: {click_race_result!r}")
 
+        main_chart = page.locator("[data-main-chart] svg")
+        main_chart.hover(position={"x": 140, "y": 110})
+        main_tooltip = page.locator("[data-main-chart] .chart-tooltip:not([hidden])")
+        if main_tooltip.count() != 1 or not main_tooltip.inner_text().strip():
+            raise AssertionError("main trend chart did not expose a hover readout")
+        main_chart.focus()
+        main_chart.press("ArrowLeft")
+        if not main_tooltip.inner_text().strip():
+            raise AssertionError("main trend chart did not expose a keyboard readout")
+
+        page.locator('a[data-view="transmission"]').click()
+        page.wait_for_selector(".curve-svg")
+        curve_chart = page.locator(".curve-svg")
+        curve_chart.hover(position={"x": 150, "y": 80})
+        curve_tooltip = page.locator(".curve-chart-shell .chart-tooltip:not([hidden])")
+        if curve_tooltip.count() != 1 or "%" not in curve_tooltip.inner_text():
+            raise AssertionError("Treasury curve did not expose both date and value details")
+
         curve_states = page.evaluate(
             """() => ({
               missing: treasuryCurvePanel({treasury_curve: {spreads: {spread_10y_2y: {label: '10Y-2Y', value: null, available_for_analysis: false, quality_status: 'unavailable'}}}}),
@@ -140,6 +158,7 @@ def main() -> int:
             "range_race": "latest_selection_won",
             "real_range_click_race": "local_1y_selection_won",
             "curve_missing_state": "unknown_not_non_inverted",
+            "chart_interactions": "pointer_and_keyboard_readouts_visible",
             "evidence_drill_down": "opened_matching_metric",
             "responsive_viewports": responsive_checks,
             "foreign_cache": "preserved",

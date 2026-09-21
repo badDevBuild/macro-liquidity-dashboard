@@ -576,6 +576,8 @@ def build_agent_context(root: Path) -> tuple[dict[str, Any], dict[str, Any]]:
         "latest_release_method",
         "latest_release_contributions",
         "direction",
+        "available_for_analysis",
+        "quality_status",
         "trend_changes",
         "trend_method",
         "components",
@@ -599,6 +601,7 @@ def build_agent_context(root: Path) -> tuple[dict[str, Any], dict[str, Any]]:
     compact_proxy.pop("trend_changes", None)
     weekly_proxy = {
         "id": "net_liquidity_proxy_weekly",
+        "metric_id": "net_liquidity_proxy_weekly",
         "label": "流动性参考值（日序列趋势）",
         "methodology_version": proxy.get("methodology_version"),
         "formula": proxy.get("formula"),
@@ -606,6 +609,8 @@ def build_agent_context(root: Path) -> tuple[dict[str, Any], dict[str, Any]]:
         "value": proxy.get("trend_latest_value"),
         "observed_at": proxy.get("trend_latest_observed_at"),
         "changes": proxy.get("trend_changes", {}),
+        "available_for_analysis": proxy.get("available_for_analysis") is True,
+        "quality_status": proxy.get("quality_status"),
         "recent_daily_points": trend[-30:] if isinstance(trend, list) else [],
         "method": proxy.get("trend_method"),
     }
@@ -1620,13 +1625,11 @@ def run_agent_analysis(
         if not force and existing and existing.get("snapshot_run_id") == snapshot_run_id:
             existing_errors = validate_agent_payload(
                 existing,
-                {
-                    **dashboard.get("metrics", {}),
-                    **dashboard.get("derived_metrics", {}),
-                },
-                dashboard.get("proxy", {}),
+                context.get("metrics", {}),
+                context.get("net_liquidity_proxy", {}),
                 context_items,
                 context.get("analysis_delta"),
+                context.get("net_liquidity_proxy_weekly", {}),
             )
             if not existing_errors:
                 atomic_json(
@@ -1724,10 +1727,9 @@ def run_agent_analysis(
         final_payload: dict[str, Any] | None = None
         retry_errors: list[str] = []
         previous_payload: dict[str, Any] | None = None
-        metrics = {
-            **dashboard.get("metrics", {}),
-            **dashboard.get("derived_metrics", {}),
-        }
+        metrics = context.get("metrics", {})
+        proxy = context.get("net_liquidity_proxy", {})
+        weekly_proxy = context.get("net_liquidity_proxy_weekly", {})
         for attempt_number in range(1, max(1, max_attempts) + 1):
             if attempt_number == 1:
                 attempt_kind = "initial_analysis"
@@ -1789,9 +1791,10 @@ def run_agent_analysis(
             initial_validation_errors = validate_agent_payload(
                 normalized,
                 metrics,
-                dashboard.get("proxy", {}),
+                proxy,
                 context_items,
                 context.get("analysis_delta"),
+                weekly_proxy,
             )
             attempt_status["initial_validation_errors"] = initial_validation_errors
             repaired = normalized
@@ -1805,9 +1808,10 @@ def run_agent_analysis(
                     validation_errors = validate_agent_payload(
                         repaired,
                         metrics,
-                        dashboard.get("proxy", {}),
+                        proxy,
                         context_items,
                         context.get("analysis_delta"),
+                        weekly_proxy,
                     )
             attempt_status["auto_repair_actions"] = repair_actions
             attempt_status["validation_errors"] = validation_errors

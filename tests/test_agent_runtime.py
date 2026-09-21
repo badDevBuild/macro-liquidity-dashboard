@@ -20,7 +20,10 @@ from liquidity_dashboard.agent_runtime import (  # noqa: E402
     build_runtime_schema,
     run_agent_analysis,
 )
-from liquidity_dashboard.agent_analysis import _evidence_matches  # noqa: E402
+from liquidity_dashboard.agent_analysis import (  # noqa: E402
+    _evidence_matches,
+    validate_agent_payload,
+)
 
 
 class AgentRuntimeTests(unittest.TestCase):
@@ -442,6 +445,79 @@ class AgentRuntimeTests(unittest.TestCase):
         self.assertIn(
             None,
             [option["comparison_window"] for option in issues[0]["valid_options"]],
+        )
+
+    def test_repair_diagnostics_accepts_canonical_weekly_proxy_evidence(self) -> None:
+        evidence = {
+            "metric_id": "net_liquidity_proxy_weekly",
+            "observed_at": "2026-09-17",
+            "value": 5773597.0,
+            "comparison_window": "1w",
+            "change": -144176.0,
+        }
+        context = {
+            "metrics": {},
+            "net_liquidity_proxy": {},
+            "net_liquidity_proxy_weekly": {
+                "metric_id": "net_liquidity_proxy_weekly",
+                "value": 5773597.0,
+                "observed_at": "2026-09-17",
+                "available_for_analysis": True,
+                "quality_status": "fresh_network",
+                "changes": {
+                    "1w": {"change": -144176.0, "coverage_matched": True}
+                },
+            },
+            "analysis_delta": {},
+            "news_and_events": {"past_24h": [], "future_90d": []},
+        }
+
+        diagnostics = _repair_diagnostics(
+            {
+                "drivers": [{"evidence": [evidence]}],
+                "contradictions": [],
+                "layer_analysis": [],
+            },
+            context,
+            [],
+        )
+
+        self.assertEqual(diagnostics["evidence_reference_issues"], [])
+
+    def test_validator_rejects_evidence_from_runtime_stale_metric(self) -> None:
+        payload = self.model_payload()
+        stale_metric = {
+            "metric_id": "energy_brent_spot",
+            "value": 130.8,
+            "observed_at": "2026-09-15",
+            "available_for_analysis": False,
+            "quality_status": "stale_runtime",
+            "changes": {
+                "1w": {"change": 24.68, "coverage_matched": True}
+            },
+        }
+        payload["drivers"][0]["evidence"] = [
+            {
+                "metric_id": "energy_brent_spot",
+                "observed_at": "2026-09-15",
+                "value": 130.8,
+                "comparison_window": "1w",
+                "change": 24.68,
+            }
+        ]
+
+        errors = validate_agent_payload(
+            payload,
+            {"tga_daily": self.dashboard()["metrics"]["tga_daily"],
+             "energy_brent_spot": stale_metric},
+            {},
+            {},
+            {"status": "comparison_unavailable"},
+        )
+
+        self.assertIn(
+            "drivers contains evidence that does not match the snapshot",
+            errors,
         )
 
     def test_invalid_derivatives_window_is_repaired_from_exact_options(self) -> None:
