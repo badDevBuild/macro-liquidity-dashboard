@@ -90,6 +90,31 @@ def main() -> int:
         if curve_tooltip.count() != 1 or "%" not in curve_tooltip.inner_text():
             raise AssertionError("Treasury curve did not expose both date and value details")
 
+        page.locator('[data-flow-target="flow-energy"]').click()
+        page.wait_for_selector("[data-energy-chart] .yen-line-2")
+        energy_strokes = page.locator("[data-energy-chart] .chart-line").evaluate_all(
+            "nodes => nodes.map(node => getComputedStyle(node).stroke)"
+        )
+        if len(energy_strokes) < 2 or len(set(energy_strokes[:2])) != 2:
+            raise AssertionError(f"energy chart series share one stroke color: {energy_strokes!r}")
+
+        page.locator('[data-flow-target="flow-yen-carry"]').click()
+        page.wait_for_selector("[data-yen-carry-chart] .yen-line-2")
+        yen_strokes = page.locator("[data-yen-carry-chart] .chart-line").evaluate_all(
+            "nodes => nodes.map(node => getComputedStyle(node).stroke)"
+        )
+        if len(yen_strokes) < 2 or len(set(yen_strokes[:2])) != 2:
+            raise AssertionError(f"yen chart series share one stroke color: {yen_strokes!r}")
+
+        page.locator('[data-flow-target="flow-cross-asset"]').click()
+        page.locator('[data-cross-asset-comparison="broad_dollar_btc"]').click()
+        page.wait_for_selector("[data-cross-asset-chart] .cross-asset-line-dollar")
+        cross_strokes = page.locator("[data-cross-asset-chart] .chart-line").evaluate_all(
+            "nodes => nodes.map(node => getComputedStyle(node).stroke)"
+        )
+        if len(cross_strokes) < 2 or len(set(cross_strokes[:2])) != 2:
+            raise AssertionError(f"cross-asset series share one stroke color: {cross_strokes!r}")
+
         curve_states = page.evaluate(
             """() => ({
               missing: treasuryCurvePanel({treasury_curve: {spreads: {spread_10y_2y: {label: '10Y-2Y', value: null, available_for_analysis: false, quality_status: 'unavailable'}}}}),
@@ -169,6 +194,7 @@ def main() -> int:
             "curve_missing_state": "unknown_not_non_inverted",
             "funding_rate_names": "four_bilingual_labels_visible",
             "chart_interactions": "pointer_and_keyboard_readouts_visible",
+            "multi_series_colors": "energy_yen_and_cross_asset_lines_are_distinct",
             "evidence_drill_down": "opened_matching_metric",
             "responsive_viewports": responsive_checks,
             "foreign_cache": "preserved",

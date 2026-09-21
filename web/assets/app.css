@@ -3519,6 +3519,22 @@ details[open] .disclosure-chevron {
   vector-effect: non-scaling-stroke;
 }
 
+/* Keep every plotted series bound to the same color used by its legend and
+   hover marker. These selectors intentionally outrank the generic chart line. */
+.chart-line.yen-line-1,
+.chart-line.cross-asset-line-btc {
+  stroke: var(--chart-series-1);
+}
+
+.chart-line.yen-line-2,
+.chart-line.cross-asset-line-dollar {
+  stroke: var(--chart-series-2);
+}
+
+.chart-line.yen-line-3 {
+  stroke: var(--chart-series-3);
+}
+
 .chart-dot {
   fill: var(--color-surface);
   stroke: var(--color-accent);
