@@ -3807,6 +3807,46 @@ details[open] .disclosure-chevron {
 }
 
 @media (max-width: 39.99rem) {
+  .signal-row {
+    min-height: 0;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+    gap: var(--space-sm);
+  }
+
+  .signal-row .mini-chart {
+    width: 100%;
+    min-height: 5rem;
+    place-items: stretch;
+  }
+
+  .chart-tooltip,
+  .mini-chart .chart-tooltip {
+    position: static;
+    top: auto;
+    left: auto !important;
+    z-index: auto;
+    width: 100%;
+    max-width: none;
+    margin-top: var(--space-xs);
+    padding: var(--space-sm);
+    background: var(--color-surface-muted);
+    box-shadow: none;
+    transform: none;
+  }
+
+  .chart-tooltip span,
+  .mini-chart .chart-tooltip span {
+    display: grid;
+    width: 100%;
+    min-width: 0;
+    grid-template-columns: 1.1rem minmax(0, 1fr) auto;
+  }
+
+  .chart-tooltip em {
+    margin-left: var(--space-xs);
+  }
+
   .chart-shell-main {
     min-height: 13.125rem;
   }

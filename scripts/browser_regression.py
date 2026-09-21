@@ -73,6 +73,40 @@ def main() -> int:
         if not main_tooltip.inner_text().strip():
             raise AssertionError("main trend chart did not expose a keyboard readout")
 
+        mini_charts = page.locator(".signal-row .mini-chart svg")
+        if mini_charts.count() < 2:
+            raise AssertionError("overview did not render enough mini charts for mobile readout checks")
+        mini_charts.nth(0).click(position={"x": 90, "y": 28})
+        first_mobile_readout = page.locator(".chart-tooltip:not([hidden])")
+        if first_mobile_readout.count() != 1:
+            raise AssertionError("opening a mobile chart readout left multiple readouts visible")
+        mobile_readout_layout = page.evaluate(
+            """() => {
+              const tooltip = document.querySelector('.chart-tooltip:not([hidden])');
+              const svg = tooltip?.parentElement?.querySelector('svg.chart-explorer');
+              if (!tooltip || !svg) return null;
+              const tooltipRect = tooltip.getBoundingClientRect();
+              const svgRect = svg.getBoundingClientRect();
+              return {
+                position: getComputedStyle(tooltip).position,
+                tooltipTop: tooltipRect.top,
+                svgBottom: svgRect.bottom,
+                tooltipWidth: tooltipRect.width,
+                containerWidth: tooltip.parentElement.getBoundingClientRect().width
+              };
+            }"""
+        )
+        if (
+            not mobile_readout_layout
+            or mobile_readout_layout["position"] != "static"
+            or mobile_readout_layout["tooltipTop"] < mobile_readout_layout["svgBottom"] - 1
+            or mobile_readout_layout["tooltipWidth"] > mobile_readout_layout["containerWidth"] + 1
+        ):
+            raise AssertionError(f"mobile chart readout still overlays its chart: {mobile_readout_layout!r}")
+        mini_charts.nth(1).click(position={"x": 90, "y": 28})
+        if page.locator(".chart-tooltip:not([hidden])").count() != 1:
+            raise AssertionError("mobile charts can keep more than one pinned readout open")
+
         page.locator('a[data-view="transmission"]').click()
         page.wait_for_selector(".curve-svg")
         funding_text = page.locator(".rate-levels").inner_text()
@@ -177,6 +211,25 @@ def main() -> int:
         if not cache_result["kept"] or "another-app-cache" not in cache_result["keys"]:
             raise AssertionError("service worker deleted another app's cache")
 
+        page.set_viewport_size({"width": 390, "height": 844})
+        view_widths = {}
+        for view in ("overview", "transmission", "ledger", "data"):
+            page.locator(f'a[data-view="{view}"]').click()
+            page.wait_for_timeout(120)
+            measured = page.evaluate(
+                """view => ({
+                  active: !document.querySelector(`#view-${view}`)?.hidden,
+                  document: document.documentElement.scrollWidth,
+                  viewport: innerWidth
+                })""",
+                view,
+            )
+            if not measured["active"]:
+                raise AssertionError(f"mobile navigation did not open {view}")
+            if measured["document"] > measured["viewport"] + 2:
+                raise AssertionError(f"mobile {view} view overflows horizontally: {measured!r}")
+            view_widths[view] = measured["document"]
+
         responsive_checks = []
         for width, height in ((320, 700), (844, 390)):
             page.set_viewport_size({"width": width, "height": height})
@@ -194,8 +247,10 @@ def main() -> int:
             "curve_missing_state": "unknown_not_non_inverted",
             "funding_rate_names": "four_bilingual_labels_visible",
             "chart_interactions": "pointer_and_keyboard_readouts_visible",
+            "mobile_chart_readouts": "inline_and_single_active_readout",
             "multi_series_colors": "energy_yen_and_cross_asset_lines_are_distinct",
             "evidence_drill_down": "opened_matching_metric",
+            "mobile_views": view_widths,
             "responsive_viewports": responsive_checks,
             "foreign_cache": "preserved",
         }

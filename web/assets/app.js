@@ -3091,13 +3091,27 @@ function bindChartExplorer(container, samples, {plotTop = 0, plotBottom = 100, t
   svg.classList.add("chart-explorer");
 
   let activeIndex = usable.length - 1;
-  let pinned = false;
+  svg.dataset.chartPinned = "false";
+
+  const isPinned = () => svg.dataset.chartPinned === "true";
+  const closeOtherReadouts = () => {
+    document.querySelectorAll(".chart-tooltip:not([hidden])").forEach((otherTooltip) => {
+      if (otherTooltip === tooltip) return;
+      otherTooltip.hidden = true;
+      const otherContainer = otherTooltip.parentElement;
+      const otherLayer = otherContainer?.querySelector(".chart-hover-layer");
+      const otherSvg = otherContainer?.querySelector("svg.chart-explorer");
+      if (otherLayer) otherLayer.hidden = true;
+      if (otherSvg) otherSvg.dataset.chartPinned = "false";
+    });
+  };
 
   const hide = () => {
     tooltip.hidden = true;
     layer.hidden = true;
   };
   const show = (index) => {
+    closeOtherReadouts();
     activeIndex = Math.max(0, Math.min(usable.length - 1, index));
     const sample = usable[activeIndex];
     guide.setAttribute("x1", sample.x.toFixed(2));
@@ -3132,25 +3146,25 @@ function bindChartExplorer(container, samples, {plotTop = 0, plotBottom = 100, t
 
   svg.addEventListener("pointermove", (event) => {
     if (event.pointerType === "touch") return;
-    pinned = false;
+    svg.dataset.chartPinned = "false";
     show(nearestIndex(event.clientX));
   });
-  svg.addEventListener("pointerleave", () => { if (!pinned) hide(); });
+  svg.addEventListener("pointerleave", () => { if (!isPinned()) hide(); });
   svg.addEventListener("click", (event) => {
-    pinned = true;
+    svg.dataset.chartPinned = "true";
     show(nearestIndex(event.clientX));
   });
   svg.addEventListener("focus", () => show(activeIndex));
-  svg.addEventListener("blur", () => { if (!pinned) hide(); });
+  svg.addEventListener("blur", () => { if (!isPinned()) hide(); });
   svg.addEventListener("keydown", (event) => {
     if (!["ArrowLeft", "ArrowRight", "Home", "End", "Escape"].includes(event.key)) return;
     event.preventDefault();
     if (event.key === "Escape") {
-      pinned = false;
+      svg.dataset.chartPinned = "false";
       hide();
       return;
     }
-    pinned = true;
+    svg.dataset.chartPinned = "true";
     if (event.key === "Home") activeIndex = 0;
     else if (event.key === "End") activeIndex = usable.length - 1;
     else activeIndex += event.key === "ArrowRight" ? 1 : -1;
