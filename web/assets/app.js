@@ -1137,6 +1137,36 @@ function genericFlowMetrics(metrics) {
   }).join("");
 }
 
+const FUNDING_RATE_NAMES = {
+  sofr: {
+    chinese: "担保隔夜融资利率",
+    abbreviation: "SOFR",
+    english: "Secured Overnight Financing Rate"
+  },
+  effective_fed_funds_rate: {
+    chinese: "有效联邦基金利率",
+    abbreviation: "EFFR",
+    english: "Effective Federal Funds Rate"
+  },
+  iorb: {
+    chinese: "准备金余额利率",
+    abbreviation: "IORB",
+    english: "Interest on Reserve Balances"
+  },
+  on_rrp_award_rate: {
+    chinese: "隔夜逆回购利率",
+    abbreviation: "ON RRP",
+    english: "Overnight Reverse Repurchase Agreement Offering Rate"
+  }
+};
+
+function fundingRateLabel(metric) {
+  const name = FUNDING_RATE_NAMES[metric.metric_id];
+  if (!name) return escapeHTML(metric.short_label || metric.label);
+  const accessible = `${name.chinese}，英文 ${name.english}，缩写 ${name.abbreviation}`;
+  return `<span class="rate-name" aria-label="${escapeHTML(accessible)}">${escapeHTML(name.chinese)}（<abbr title="${escapeHTML(name.english)}">${escapeHTML(name.abbreviation)}</abbr>）</span>`;
+}
+
 function fundingPanel(data) {
   const funding = data.funding_rates || {};
   const stateLabels = {
@@ -1147,7 +1177,7 @@ function fundingPanel(data) {
   };
   const levels = (funding.levels || []).map((metric) => `
     <div class="rate-level">
-      <span>${escapeHTML(metric.short_label || metric.label)}</span>
+      ${fundingRateLabel(metric)}
       <strong>${escapeHTML(formatMetricValue(metric, true))}</strong>
       <small>${escapeHTML(formatDate(metric.observed_at))}</small>
     </div>`).join("");

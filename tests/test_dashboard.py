@@ -868,11 +868,11 @@ class FrontendDeploymentTests(unittest.TestCase):
         self.assertIn('localStorage.setItem(THEME_KEY, nextTheme)', app)
         self.assertIn('setAttribute("aria-pressed"', app)
         self.assertIn('html[data-theme="dark"]', styles)
-        self.assertIn('assets/app.css?v=45', index)
-        self.assertIn('assets/app.js?v=45', index)
-        self.assertIn('assets/coinbase-premium.js?v=45', index)
-        self.assertIn('assets/coinbase-premium.js?v=45', service_worker)
-        self.assertIn('`${CACHE_PREFIX}shell-v45`', service_worker)
+        self.assertIn('assets/app.css?v=46', index)
+        self.assertIn('assets/app.js?v=46', index)
+        self.assertIn('assets/coinbase-premium.js?v=46', index)
+        self.assertIn('assets/coinbase-premium.js?v=46', service_worker)
+        self.assertIn('`${CACHE_PREFIX}shell-v46`', service_worker)
         self.assertIn('`${CACHE_PREFIX}data-v3`', service_worker)
         self.assertIn('key.startsWith(CACHE_PREFIX)', service_worker)
         self.assertNotIn('.filter((key) => ![SHELL_CACHE, DATA_CACHE].includes(key))', service_worker)
@@ -894,6 +894,22 @@ class FrontendDeploymentTests(unittest.TestCase):
         self.assertIn("当前利差不可用，不判断是否倒挂", app)
         self.assertIn("只有历史值", app)
         self.assertNotIn("const inverted = numericOrNull(spread.value) < 0", app)
+
+    def test_short_term_rates_use_consistent_bilingual_names(self) -> None:
+        app = (PROJECT_ROOT / "web" / "assets" / "app.js").read_text(encoding="utf-8")
+        for label in (
+            "担保隔夜融资利率",
+            "有效联邦基金利率",
+            "准备金余额利率",
+            "隔夜逆回购利率",
+            "Secured Overnight Financing Rate",
+            "Effective Federal Funds Rate",
+            "Interest on Reserve Balances",
+            "Overnight Reverse Repurchase Agreement Offering Rate",
+        ):
+            self.assertIn(label, app)
+        self.assertIn("aria-label=", app)
+        self.assertIn("<abbr title=", app)
 
     def test_frontend_evidence_links_open_the_full_metric_registry(self) -> None:
         app = (PROJECT_ROOT / "web" / "assets" / "app.js").read_text(encoding="utf-8")

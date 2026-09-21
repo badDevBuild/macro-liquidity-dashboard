@@ -75,6 +75,15 @@ def main() -> int:
 
         page.locator('a[data-view="transmission"]').click()
         page.wait_for_selector(".curve-svg")
+        funding_text = page.locator(".rate-levels").inner_text()
+        for expected_rate in (
+            "担保隔夜融资利率（SOFR）",
+            "有效联邦基金利率（EFFR）",
+            "准备金余额利率（IORB）",
+            "隔夜逆回购利率（ON RRP）",
+        ):
+            if expected_rate not in funding_text:
+                raise AssertionError(f"missing bilingual funding-rate label: {expected_rate}")
         curve_chart = page.locator(".curve-svg")
         curve_chart.hover(position={"x": 150, "y": 80})
         curve_tooltip = page.locator(".curve-chart-shell .chart-tooltip:not([hidden])")
@@ -158,6 +167,7 @@ def main() -> int:
             "range_race": "latest_selection_won",
             "real_range_click_race": "local_1y_selection_won",
             "curve_missing_state": "unknown_not_non_inverted",
+            "funding_rate_names": "four_bilingual_labels_visible",
             "chart_interactions": "pointer_and_keyboard_readouts_visible",
             "evidence_drill_down": "opened_matching_metric",
             "responsive_viewports": responsive_checks,

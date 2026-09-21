@@ -2005,6 +2005,20 @@ main {
   font-size: var(--text-xs);
 }
 
+.rate-level .rate-name {
+  min-height: 2.5em;
+  color: var(--color-text-soft);
+  font-weight: 650;
+  line-height: 1.25;
+}
+
+.rate-level .rate-name abbr {
+  color: var(--color-text-muted);
+  font-weight: 720;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
 .rate-level strong {
   font-size: var(--text-sm);
   font-variant-numeric: tabular-nums;
