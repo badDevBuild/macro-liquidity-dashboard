@@ -61,6 +61,7 @@ const STATUS_LABELS = {
   publish_degraded: "部分数据缺失",
   block_analysis: "暂不新增分析",
   ready: "数据正常",
+  waiting_release: "等待官方发布",
   degraded: "部分数据不可用",
   stale: "数据已过期"
 };
@@ -439,7 +440,7 @@ function formatCadence(value) {
 }
 
 function statusClass(code) {
-  const displayCode = code === "ready"
+  const displayCode = ["ready", "waiting_release"].includes(code)
     ? "publish"
     : code === "degraded"
       ? "publish_degraded"
@@ -756,6 +757,12 @@ function renderAgentAnalysis(data) {
 
 function statusNotice(data) {
   const runtimeCode = effectiveDataStatus(data.status);
+  if (runtimeCode === "waiting_release") {
+    const waiting = (data.status.waiting_release || []).map((item) =>
+      `${item.label}：${formatDateTime(item.runtime_freshness_expires_at)}（北京时间）`
+    ).join("；");
+    return `<div class="notice"><strong>等待官方下一期发布</strong><span>${escapeHTML(waiting)}。当前值仍在正常发布窗口内；到时若来源未更新，将停止新增分析。</span></div>`;
+  }
   if (runtimeCode === "stale") {
     const stale = (data.status.runtime_stale || []).map((item) => item.label).join("、");
     return `<div class="notice notice-error"><strong>当前数据已经过期</strong><span>${escapeHTML(stale || "关键指标")} 超过了允许的更新时间。网页仍可浏览，但不会把旧数据当成今天的新信号，也不会生成新的 Agent 判断。</span></div>`;

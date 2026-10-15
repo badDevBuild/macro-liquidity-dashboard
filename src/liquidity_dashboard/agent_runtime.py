@@ -410,9 +410,9 @@ def _analysis_delta(
     }
 
 
-def build_agent_context(root: Path) -> tuple[dict[str, Any], dict[str, Any]]:
+def build_agent_context(root: Path, *, now: datetime | None = None) -> tuple[dict[str, Any], dict[str, Any]]:
     """Build the bounded, deterministic context the Agent may reason over."""
-    dashboard = build_dashboard(root)
+    dashboard = build_dashboard(root, now=now)
     snapshot = dashboard.get("snapshot", {})
     status = dashboard.get("status", {})
     proxy = dashboard.get("proxy", {})
@@ -1573,7 +1573,7 @@ def run_agent_analysis(
             }
 
         started_at = utc_now(now)
-        context, dashboard = build_agent_context(root)
+        context, dashboard = build_agent_context(root, now=now)
         snapshot_run_id = str(context.get("snapshot_run_id") or "")
         context_bundle_id = str(context.get("context_bundle_id") or "context-unavailable")
         context_items = {
@@ -1583,7 +1583,9 @@ def run_agent_analysis(
             if isinstance(item, dict) and isinstance(item.get("context_id"), str)
         }
         publication = context.get("publication", {})
-        allowed = bool(publication.get("analysis_allowed"))
+        allowed = bool(publication.get("analysis_allowed")) and bool(
+            dashboard.get("status", {}).get("analysis_allowed")
+        )
         publication_state = publication.get("status")
         mode = "publish" if publish else "shadow"
         if not snapshot_run_id or not allowed or publication_state not in PUBLISHABLE_DATA_STATES:
