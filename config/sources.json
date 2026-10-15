@@ -323,6 +323,8 @@
       "series_id": "NFCI",
       "unit": "index",
       "cadence": "weekly",
+      "release_schedule": "chicago_fed_nfci",
+      "release_schedule_note": "Wednesday 08:30 America/New_York, Thursday when a federal holiday falls Monday-Wednesday; the previous Friday's weekly observation must arrive by release time. No post-release grace.",
       "freshness_max_days": 12,
       "fallback_max_days": 19,
       "valid_range": [-10, 10]

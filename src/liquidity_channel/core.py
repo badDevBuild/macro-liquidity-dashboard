@@ -21,6 +21,8 @@ from pathlib import Path
 from typing import Any, Callable, Iterable
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from .nfci_schedule import nfci_freshness
+
 
 UTC = timezone.utc
 ELIGIBLE_STATUSES = {"fresh_network", "fresh_cache"}
@@ -945,6 +947,7 @@ def source_outcome_from_cache(
     error: str,
     today: date,
     *,
+    now: datetime | None = None,
     attempts: int = 0,
     elapsed_ms: int | None = None,
     fetched_at: str | None = None,
@@ -956,7 +959,15 @@ def source_outcome_from_cache(
         available = False
     else:
         age_days = observation_age(cached, today)
-        if age_days <= int(source["freshness_max_days"]):
+        window = nfci_freshness(
+            source, cached.observed_at,
+            now or datetime.combine(today, datetime.max.time(), UTC),
+        )
+        is_fresh = (
+            window["status"] != "stale" if window
+            else age_days <= int(source["freshness_max_days"])
+        )
+        if is_fresh:
             status = "fresh_cache"
             available = True
         elif age_days <= int(source["fallback_max_days"]):
@@ -1013,7 +1024,12 @@ def collect_source(
         revisions = store.upsert_observations(
             observations, run_id, response.fetched_at, raw_sha256
         )
-        if age_days <= int(source["freshness_max_days"]):
+        window = nfci_freshness(source, latest.observed_at, now)
+        is_fresh = (
+            window["status"] != "stale" if window
+            else age_days <= int(source["freshness_max_days"])
+        )
+        if is_fresh:
             status = "fresh_network"
             available = True
             error = None
@@ -1021,7 +1037,8 @@ def collect_source(
             status = "stale_source"
             available = False
             error = (
-                f"latest observation is {age_days} days old; "
+                f"NFCI observation is outside its release window ending {window['expires_at']}"
+                if window else f"latest observation is {age_days} days old; "
                 f"freshness limit is {source['freshness_max_days']}"
             )
         outcome = SourceOutcome(
@@ -1057,6 +1074,7 @@ def collect_source(
                 cached,
                 str(exc),
                 today,
+                now=now,
                 attempts=attempts,
                 elapsed_ms=elapsed_ms,
                 fetched_at=response.fetched_at if response else None,
@@ -1284,6 +1302,7 @@ def run_channel(
                     store.latest_cached(source),
                     f"run deadline of {run_deadline:g} seconds exceeded",
                     now.date(),
+                    now=now,
                 )
                 revisions = 0
             else:

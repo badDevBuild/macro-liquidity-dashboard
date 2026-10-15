@@ -7,6 +7,8 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+from liquidity_channel.nfci_schedule import nfci_freshness
+
 from .agent_analysis import load_agent_analysis
 from .context_channel import load_context_bundle
 from .cross_asset_channel import load_cross_asset_history, load_cross_asset_payload
@@ -534,7 +536,10 @@ def _runtime_freshness(
     if not observed_at or not isinstance(max_days, (int, float)):
         result["runtime_freshness_status"] = "not_recalculated"
         return result
-    current = (now or datetime.now(tz=UTC)).astimezone(UTC).date()
+    checked_at = now or datetime.now(tz=UTC)
+    if checked_at.tzinfo is None:
+        checked_at = checked_at.replace(tzinfo=UTC)
+    current = checked_at.astimezone(UTC).date()
     try:
         observed = _parse_date(str(observed_at))
     except ValueError:
@@ -545,11 +550,14 @@ def _runtime_freshness(
     age_days = max(0, (current - observed).days)
     result["age_days"] = age_days
     result["runtime_freshness_max_days"] = int(max_days)
-    if age_days > int(max_days):
+    window = nfci_freshness(source or {}, str(observed_at), checked_at)
+    if window:
+        result.update({f"runtime_freshness_{key}": value for key, value in window.items()})
+    if (window and window["status"] == "stale") or (not window and age_days > int(max_days)):
         result["runtime_freshness_status"] = "stale"
         result["quality_status"] = "stale_runtime"
         result["available_for_analysis"] = False
-    else:
+    elif not window:
         result["runtime_freshness_status"] = "current"
     return result
 
@@ -2214,6 +2222,10 @@ def build_dashboard(root: Path, *, now: datetime | None = None) -> dict[str, Any
         for metric in metric_views.values()
         if metric.get("runtime_freshness_status") == "stale"
     ]
+    waiting_release = [
+        metric for metric in metric_views.values()
+        if metric.get("runtime_freshness_status") == "waiting_release"
+    ]
     runtime_analysis_allowed = bool(publication.get("analysis_allowed")) and not runtime_stale
     runtime_eligible_count = sum(
         metric.get("available_for_analysis") is True for metric in metric_views.values()
@@ -2227,6 +2239,8 @@ def build_dashboard(root: Path, *, now: datetime | None = None) -> dict[str, Any
         if runtime_stale
         else "degraded"
         if publication_status == "publish_degraded" or runtime_eligible_count < len(metric_views)
+        else "waiting_release"
+        if runtime_analysis_allowed and waiting_release
         else "ready"
         if runtime_analysis_allowed
         else "degraded"
@@ -2265,6 +2279,7 @@ def build_dashboard(root: Path, *, now: datetime | None = None) -> dict[str, Any
                 "code": data_status_code,
                 "runtime_eligible_metric_count": runtime_eligible_count,
                 "runtime_stale_metric_count": len(runtime_stale),
+                "runtime_waiting_release_metric_count": len(waiting_release),
                 "publication_status": publication_status,
                 "analysis_eligible": runtime_analysis_allowed,
                 "checked_at": _iso_now(now),
@@ -2273,6 +2288,7 @@ def build_dashboard(root: Path, *, now: datetime | None = None) -> dict[str, Any
             "eligible_metric_count": publication.get("eligible_metric_count", 0),
             "total_metric_count": publication.get("total_metric_count", len(metric_views)),
             "unavailable": unavailable,
+            "waiting_release": waiting_release,
             "nonfresh": nonfresh,
             "runtime_stale": runtime_stale,
             "warnings": publication.get("warnings", []),
